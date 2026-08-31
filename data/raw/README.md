@@ -48,14 +48,24 @@ file X here" message if a (non-automatable) source is ever missing.
   breakdown in either count table.
 - **OHID Fingertips 41001** — the previous source; England-only, age 10+, 3-year
   pooled. Retained as an optional cross-check on the LA signal, per the brief.
-- **Public transport travel time** — not modelled. Travel time is car-only.
-  `ingest/car_access.py` is the groundwork: it records the share of households
-  with no car or van per LSOA, so the map and the PDF can flag where the drive
-  time overstates access. Modelling the journey itself is a separate, larger
-  piece of work — it needs a time-of-day parameter on `TravelTimeProvider`,
-  round-trip feasibility (the last bus home is usually the binding constraint
-  for an evening session) and a local routing engine such as R5 for the
-  35,672 × 354 matrix.
+- **Public transport travel time** — measured, but deliberately **not scored**.
+  Travel time stays car-only. See
+  [`docs/adr/0002-public-transport-feasibility-spike.md`](../../docs/adr/0002-public-transport-feasibility-spike.md)
+  and re-derive with `python spikes/pt_evening_access.py`.
+  What the spike established: the **Bus Open Data Service** publishes GTFS for
+  all of GB at `https://data.bus-data.dft.gov.uk/timetable/download/gtfs-file/all`
+  (~1.4GB, regenerated daily, **no API key**), and it is enough to answer whether
+  a man can reach a Monday-evening session by 19:00 and get home after 21:00.
+  Two reasons it does not enter the score. **BODS is a bus feed** — nationally 3
+  rail routes and 57 tram, so National Rail and Nottingham's NET tram are both
+  absent, which understates rural access. And the answer swings on the
+  *acceptable-journey* rules rather than on the data: Mansfield runs 0% to 94%
+  round-trip-feasible depending on how long a journey you assume a man will
+  make. `ingest/car_access.py` remains the honest partial answer — it says where
+  the drive time is least worth trusting without pretending to model the
+  alternative. Note the spike also killed its stated future use: no-car share
+  correlates **+0.66** with bus feasibility, so it is not usable as a blend
+  weight.
 - If you ever switch to manually-downloaded files, drop them in `data/raw/real/`
   under the filename the adapter expects (it prints the path on failure) and
   record the URL + vintage here.

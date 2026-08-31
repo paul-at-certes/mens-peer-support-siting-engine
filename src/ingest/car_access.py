@@ -13,8 +13,14 @@ needs a time-of-day parameter on the TravelTimeProvider, round-trip feasibility
 a local routing engine for the full matrix — but we can say where the current
 number is most misleading, per area, on the map face and in the PDF.
 
-It is also the natural weight for blending car and public-transport access once
-that lands, so this is groundwork rather than a throwaway caption.
+It is NOT, however, the weight for blending car and public-transport access.
+This module used to say it was. A spike measured it and the opposite is true:
+no-car share correlates +0.66 with whether an evening bus round trip is even
+possible (spikes/pt_evening_access.py, docs/adr/0002-*). Where the buses work a
+third of households have no car; where they do not, seven in eight have one.
+Blending on this share would cancel most of the correction it was meant to make.
+Exposure and the quality of the alternative are different quantities and have to
+stay separate.
 
 Real source: Census 2021, Nomis table TS045 "Car or van availability"
 (NM_2063_1) at LSOA 2021. Dimension codes were read from the dataset definition

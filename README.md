@@ -169,11 +169,17 @@ Key real-data honesty notes (also surfaced on the map face):
   So `ingest/car_access.py` carries the per-area no-car share as **context**
   (Census 2021 TS045) and the map and PDF flag where the drive time overstates
   access. It changes no score — it says where the supply surface is least
-  trustworthy, and it is the natural weight for blending car and public-transport
-  access when that lands.
-- **Travel time defaults to the haversine stub** (straight-line over-states rural
-  access). Real road routing via **self-hosted OSRM** is implemented and ready —
-  see below.
+  trustworthy. It is *not*, as this README used to claim, the weight for blending
+  car and public-transport access: measured, no-car share correlates **+0.66**
+  with whether an evening bus round trip is possible at all, so blending on it
+  would cancel most of the correction it was meant to make. Public transport has
+  now been measured and deliberately left unscored — see
+  [ADR 0002](docs/adr/0002-public-transport-feasibility-spike.md) and
+  `spikes/pt_evening_access.py`.
+- **Travel time uses real road routing** via self-hosted OSRM
+  (`accessibility.provider: osrm`, the shipped default — see below). The
+  dependency-free haversine stub remains available for a run with no server, and
+  over-states rural access.
 
 ### Real routing (OSRM) — the shipped default
 

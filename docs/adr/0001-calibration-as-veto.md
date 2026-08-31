@@ -229,5 +229,6 @@ rather than asserted.
   stub was wrong in *both* directions — its flat 40 km/h ignores motorways, so it
   over-stated the worst journeys (90th percentile 41.4 min against 35.1). The
   switch moved 4 of the per-capita top 20, all of which stayed inside the new top
-  100. Public transport at session times remains the real gap for a population
-  that disproportionately lacks cars.
+  100. Public transport at session times has since been measured and deliberately
+  left unscored — see [ADR 0002](0002-public-transport-feasibility-spike.md).
+  It remains the real gap for a population that disproportionately lacks cars.
