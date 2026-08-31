@@ -112,11 +112,41 @@ rank_col = "rank" if view.startswith("Per-capita") else "rank_reach"
 nations = sorted(df["nation"].unique())
 chosen = st.sidebar.multiselect("Nation", nations, default=nations)
 show_groups = st.sidebar.checkbox("Show existing groups", value=True)
-top_n = st.sidebar.slider("Highlight top N", 5, min(100, len(df)), 20)
+top_n = st.sidebar.slider("Table: top N", 5, min(100, len(df)), 20)
 
 view_df = df[df["nation"].isin(chosen)].copy()
 
-# Normalise the active score to 0..1 for colour scaling.
+# --- Which areas go on the map ---------------------------------------------
+# All 35k small areas at once is slow to render and unreadable: the decision-
+# relevant areas are a few hundred, and plotting the rest buries them. Tier is
+# the natural filter because it is already the honest statement of what the
+# evidence separates (see sensitivity.py).
+if "tier" in view_df.columns:
+    n_short = int((view_df["tier"] == "shortlist").sum())
+    n_cont = int((view_df["tier"] == "contention").sum())
+    TIER_SCOPES = {
+        f"① Shortlist ({n_short:,})": ["shortlist"],
+        f"① + ② In contention ({n_short + n_cont:,})": ["shortlist", "contention"],
+        f"All areas ({len(view_df):,})": ["shortlist", "contention", "outside"],
+    }
+    scope_label = st.sidebar.radio(
+        "Map: areas shown", list(TIER_SCOPES), index=1,
+        help="① sits inside the top {n} under EVERY configuration tested; ② under "
+             "SOME. Colour is scaled against all areas in the chosen nation(s), so "
+             "it means the same thing whichever scope you pick.".format(
+                 n=sens.get("shortlist_n", 100)),
+    )
+    map_df_filter = view_df["tier"].isin(TIER_SCOPES[scope_label])
+    scope_note = scope_label
+else:
+    cap = st.sidebar.slider("Map: areas shown (top N by score)", 50,
+                            min(5000, len(view_df)), min(500, len(view_df)), step=50)
+    map_df_filter = view_df[score_col].rank(ascending=False, method="min") <= cap
+    scope_note = f"top {cap:,} by score (run the pipeline for tier filtering)"
+
+# Normalise the active score to 0..1 for colour scaling. Computed on ALL areas in
+# the chosen nation(s), never on the map subset — otherwise filtering to the top
+# 54 would repaint the weakest of them pale, as though it were low priority.
 smin, smax = view_df[score_col].min(), view_df[score_col].max()
 span = (smax - smin) or 1.0
 view_df["_norm"] = (view_df[score_col] - smin) / span
@@ -125,6 +155,7 @@ view_df["_r"] = (200 + 55 * view_df["_norm"]).astype(int)
 view_df["_g"] = (210 * (1 - view_df["_norm"])).astype(int)
 view_df["_b"] = (210 * (1 - view_df["_norm"])).astype(int)
 view_df["_radius"] = (1500 + 6000 * view_df["_norm"]).astype(int)
+map_df = view_df[map_df_filter]
 
 # --- Map --------------------------------------------------------------------
 left, right = st.columns([3, 2])
@@ -134,7 +165,7 @@ with left:
     layers = [
         pdk.Layer(
             "ScatterplotLayer",
-            data=view_df,
+            data=map_df,
             get_position="[centroid_lon, centroid_lat]",
             get_fill_color="[_r, _g, _b, 170]",
             get_radius="_radius",
@@ -150,17 +181,23 @@ with left:
             get_radius=2200,
             pickable=True,
         ))
+    centre = map_df if len(map_df) else view_df
     view_state = pdk.ViewState(
-        latitude=float(view_df["centroid_lat"].mean()),
-        longitude=float(view_df["centroid_lon"].mean()),
+        latitude=float(centre["centroid_lat"].mean()),
+        longitude=float(centre["centroid_lon"].mean()),
         zoom=6,
     )
     tooltip = {"text": "{area_code}\n" + score_col + ": {" + score_col + "}\n"
                        "need: {need_index}  supply: {supply_index}"}
     st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view_state,
                              tooltip=tooltip, map_style=None))
-    st.caption("🔴 areas = priority (darker/larger = higher).  🔵 = existing groups. "
-               "Hover for figures.")
+    st.caption(
+        f"Showing **{len(map_df):,}** of {len(view_df):,} areas — {scope_note}. "
+        "🔴 = priority (darker/larger = higher), scaled against all areas in the "
+        "chosen nation(s).  🔵 = existing groups. Hover for figures."
+    )
+    if not len(map_df):
+        st.info("No areas match this scope. Widen the nation or map filter.")
 
 # --- Ranked table + per-area breakdown -------------------------------------
 with right:

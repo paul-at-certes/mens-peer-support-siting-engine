@@ -61,6 +61,25 @@ python -m src.report
 #    -> data/output/amc_top20_report.pdf
 ```
 
+### The map (`streamlit run app/streamlit_app.py`)
+
+The priority surface defaults to showing **only the decision-relevant areas** —
+tier ① plus ②, 171 of 35,672 today. Plotting all 35k small areas is slow to
+render and unreadable: the areas you would act on are a few hundred, and drawing
+the rest buries them. The sidebar's **Map: areas shown** switches between:
+
+| scope | areas | what it is |
+|---|---|---|
+| ① Shortlist | 54 | inside the top 100 under **every** configuration tested |
+| ① + ② In contention | 171 | *(default)* — reaches the top 100 under **some** |
+| All areas | 35,672 | the full surface |
+
+Colour is always scaled against **all** areas in the chosen nation(s), never
+against the visible subset — otherwise filtering to the top 54 would repaint the
+weakest of them pale, as though it were low priority. Tier counts recompute with
+the nation filter (Wales alone: 2 and 7). If `fact_tier.parquet` is absent —
+sensitivity not yet run — the control falls back to a plain top-N-by-score cap.
+
 ### Shortlist report (`python -m src.report`)
 
 A static, shareable **PDF** of the top-N areas for a new group — for handing to a
