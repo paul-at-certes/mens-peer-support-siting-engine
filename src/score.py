@@ -1,8 +1,15 @@
 """score.py — need_index, supply_index, priority_score + factor_breakdown.
 
-Applies the LA-learned weights to the small-area proxies (each expressed as a
-within-nation percentile), nets off the supply surface, and persists a fully
-decomposed score so nothing in the ranking is unexplained.
+Applies the DECLARED component weights (config.yaml `scoring.component_weights`)
+to the small-area proxies, each expressed as a within-nation percentile, nets
+off the supply surface, and persists a fully decomposed score so nothing in the
+ranking is unexplained.
+
+The weights are a stated prior, not a regression output: the LA-level fit in
+calibrate.py checks them (and can veto one) but does not supply them. See
+docs/adr/0001-calibration-as-veto.md. Because both the weights and the
+components live on a common 0..1 percentile scale, there is no unit transfer
+from the LA fit to get wrong.
 
     need_index     = Σ wᵢ·zᵢ            # zᵢ = within-nation percentile of comp i
     supply_index   = normalise( f(travel_minutes, groups_within_catchment) )
@@ -36,12 +43,30 @@ def _within_nation_pct(df: pd.DataFrame, col: str) -> pd.Series:
     return df.groupby("nation")[col].rank(pct=True)
 
 
-def _load_weights(cfg: Config) -> dict:
-    with open(cfg.path("weights")) as fh:
+def declared_weights(cfg: Config) -> tuple[dict, float]:
+    """The declared component weights + suicide-signal weight, from config.
+
+    This is the ONLY source of scoring weights. calibrate.py writes a diagnostic
+    report to weights.json, but scoring never reads it — so the pipeline scores
+    with or without an outcome dataset (which matters: the outcome source is
+    England-only, and Wales must still be rankable).
+    """
+    sc = cfg["scoring"]
+    comp = {c: float(sc["component_weights"][c]) for c in PROXY_COMPONENTS}
+    return comp, float(sc["suicide_signal_weight"])
+
+
+def calibration_report(cfg: Config) -> dict | None:
+    """The calibration diagnostic, if calibrate.py has run. Never required."""
+    path = cfg.path("weights")
+    if not path.exists():
+        return None
+    with open(path) as fh:
         return json.load(fh)
 
 
-def prepare_components(cfg: Config) -> pd.DataFrame:
+def prepare_components(cfg: Config, travel_weight: float | None = None,
+                       accessibility_df: pd.DataFrame | None = None) -> pd.DataFrame:
     """Merge proxies, map the suicide signal down, and compute the within-nation
     percentiles + supply_index. Weight-agnostic, so multiple weighting schemes
     can be scored off the SAME prepared frame (used by score.py and
@@ -53,7 +78,8 @@ def prepare_components(cfg: Config) -> pd.DataFrame:
     occ = pd.read_parquet(interim / "fact_occupation.parquet")
     iso = pd.read_parquet(interim / "fact_isolation.parquet")
     suicide = pd.read_parquet(interim / "fact_suicide_la.parquet")
-    acc = pd.read_parquet(interim / "fact_accessibility.parquet")
+    acc = (pd.read_parquet(interim / "fact_accessibility.parquet")
+           if accessibility_df is None else accessibility_df)
 
     df = (geo
           .merge(pop[["area_code", "male_working_age_pop"]], on="area_code")
@@ -87,7 +113,9 @@ def prepare_components(cfg: Config) -> pd.DataFrame:
     df["_travel_pct"] = _within_nation_pct(df.assign(travel_minutes=tmin), "travel_minutes")
     gmax = df.groupby("nation")["groups_within_catchment"].transform("max").replace(0, 1)
     catchment_norm = df["groups_within_catchment"] / gmax
-    raw_supply = 0.6 * (1 - df["_travel_pct"]) + 0.4 * catchment_norm
+    tw = float(cfg["accessibility"].get("travel_weight", 0.6)) if travel_weight is None \
+        else float(travel_weight)
+    raw_supply = tw * (1 - df["_travel_pct"]) + (1 - tw) * catchment_norm
     # Min-max within nation to 0..1.
     gmin = raw_supply.groupby(df["nation"]).transform("min")
     gspan = (raw_supply.groupby(df["nation"]).transform("max") - gmin).replace(0, 1)
@@ -115,11 +143,8 @@ def apply_weights(df: pd.DataFrame, comp_w: dict, w_suicide: float):
 
 
 def run(cfg: Config) -> pd.DataFrame:
-    weights = _load_weights(cfg)
+    comp_w, w_suicide = declared_weights(cfg)
     df = prepare_components(cfg)
-
-    comp_w = {c: weights["components"][c]["weight"] for c in PROXY_COMPONENTS}
-    w_suicide = float(weights["suicide_signal_weight"])
     need_index, priority, reach, contrib, total_w = apply_weights(df, comp_w, w_suicide)
     df["need_index"] = need_index
     df["priority_score"] = priority
@@ -136,7 +161,9 @@ def run(cfg: Config) -> pd.DataFrame:
             "components": {
                 c: {
                     "percentile": round(float(df[f"pct_{c}"].iloc[i]), 4),
-                    "weight": round(float(comp_w[c]), 4),
+                    # Normalised share, so the four weights in a breakdown sum
+                    # to 1 and each contribution = weight x percentile.
+                    "weight": round(float(comp_w[c]) / total_w, 4),
                     "contribution": round(float(contrib[c].iloc[i] / total_w), 4),
                 } for c in PROXY_COMPONENTS
             },
@@ -147,6 +174,7 @@ def run(cfg: Config) -> pd.DataFrame:
                 "weight": round(w_suicide / total_w, 4),
                 "contribution": round(float(contrib["suicide_signal"].iloc[i] / total_w), 4),
             },
+            "weight_basis": "declared prior (config.yaml scoring.component_weights)",
             "need_index": round(float(df["need_index"].iloc[i]), 4),
             "supply_index": round(float(df["supply_index"].iloc[i]), 4),
             "priority_score": round(float(df["priority_score"].iloc[i]), 4),

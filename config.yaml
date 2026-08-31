@@ -53,46 +53,51 @@ synthetic:
   suicide_pool_years: 5
 
 # ---------------------------------------------------------------------------
-# Calibration — LA-level regression of pooled male working-age suicide counts
-# on the aggregated proxies, population as offset.
+# Calibration — LA-level regression of pooled male suicide counts on the
+# aggregated proxies, at-risk population as offset.
+#
+# This does NOT set the scoring weights (see `scoring.component_weights`). It
+# is a CHECK: it fits the model, then vetoes any declared weight the data
+# actively contradicts. Non-blocking — if it cannot run (no outcome data, no
+# network) the pipeline still scores, with the veto reported as "not run".
 # ---------------------------------------------------------------------------
 calibration:
   family: auto          # auto | poisson | negbin  (auto -> negbin if overdispersed)
   proxies: [deprivation, occupation, isolation]
   confidence_level: 0.95
+  # Veto rule. Tested on the UNIVARIATE fit: under collinearity the partial
+  # coefficients of the multivariable model are not interpretable as "is this
+  # proxy associated with the outcome", which is the question the veto asks.
+  #   contradicted -> CI lies entirely below zero (data says protective)
+  #   unsupported  -> CI spans zero AND the declared weight exceeds
+  #                   `unsupported_weight_floor` (we lean on an unevidenced proxy)
+  unsupported_weight_floor: 0.15
 
 # ---------------------------------------------------------------------------
-# Scoring weights.
-#   - The proxy weights (deprivation/occupation/isolation) are LEARNED by
-#     calibrate.py and written to weights.json; the values below are only a
-#     fallback if calibration has not been run.
-#   - suicide_signal is carried as a SEPARATE, lightly-weighted term (it does
-#     not come from the regression coefficient) per the design note.
+# Scoring weights — a DECLARED PRIOR, not a fitted result.
+#
+# need_index is an allocation index, not a calibrated surrogate for suicide
+# risk (docs/adr/0001-calibration-as-veto.md). With 292 LAs and three mutually
+# collinear proxies the LA-level fit does not identify these weights: equal
+# weights disagrees with each fitted scheme about as much as the fitted schemes
+# disagree with each other. So the weights below are stated up front and
+# defended on their own terms; calibrate.py's job is to VETO them if the data
+# contradicts them, not to supply them.
+#
+# Weights are applied to WITHIN-NATION PERCENTILE ranks (0..1), so they are
+# directly comparable to one another and there is no unit transfer from the
+# LA-level fit to worry about.
+#
+# suicide_signal is carried as a separate, lightly-weighted LA-level term. It
+# is the only component carrying real outcome data, but it is coarse (every
+# LSOA in an LA shares a value), so it nudges rather than steers.
 # ---------------------------------------------------------------------------
 scoring:
-  # Which learned weighting scheme drives production scores. calibrate.py fits
-  # all three; sensitivity.py compares them. (See docs/design.md §4, §7.)
-  #   multivariable -> partial coefficients of the 3-proxy GLM. Statistically
-  #                    clean but collinearity ZEROES deprivation, and the partial
-  #                    coefficients are fragile (top-100 only ~35% overlaps the
-  #                    other schemes — see sensitivity.json).
-  #   univariate    -> each proxy weighted by its OWN association with suicide.
-  #                    Keeps ALL three theoretically-grounded proxies contributing
-  #                    (dep/occ/iso), all-positive, and is stable under CI
-  #                    perturbation. Mild double-counting of the correlated
-  #                    economic proxies is acceptable for a resource-allocation
-  #                    INDEX. DEFAULT — chosen on the sensitivity evidence.
-  #   composite     -> merge deprivation+occupation into one "economic
-  #                    disadvantage" factor vs isolation. Resolves the dep/occ
-  #                    collinearity but in this data the isolation coef then flips
-  #                    negative, zeroing isolation — so it trades one dropped
-  #                    proxy for another. Kept for comparison.
-  weighting_scheme: univariate
-  fallback_weights:
-    deprivation: 0.40
-    occupation: 0.35
-    isolation: 0.25
-  suicide_signal_weight: 0.10   # low weight relative to the fine-grained proxies
+  component_weights:
+    deprivation: 0.40     # strongest established area-level correlate of male suicide
+    occupation: 0.35      # male share in high-risk SOC-2020 groups
+    isolation: 0.25       # male living-alone / single-separated proxies
+  suicide_signal_weight: 0.10
 
 # ---------------------------------------------------------------------------
 # Shortlist report (python -m src.report -> a shareable PDF).
@@ -107,15 +112,40 @@ report:
 # ---------------------------------------------------------------------------
 sensitivity:
   shortlist_n: 100      # size of the shortlist whose stability we test
-  n_draws: 200          # weight perturbations within the calibration CIs
+  n_draws: 200          # draws for the CI envelope
   seed: 7
+  # Axis 3: supply-surface constants. The shortlist is gated by these, so they
+  # get the same scrutiny as the need weights.
+  supply_sweep:
+    travel_weight: [0.4, 0.5, 0.6, 0.7, 0.8]
+    catchment_minutes: [20, 30, 45]
+  # Stability thresholds: top-N Jaccard vs the shipped configuration, below
+  # which the run is flagged unstable on the console, the map face and the PDF.
+  #
+  # 0.70 throughout — if a differently-but-defensibly configured run would send
+  # you to 30%+ different places, the ranking is not carrying the weight a
+  # ranking implies. Set from what the number MEANS for the decision, not tuned
+  # until the current data passes: on the England & Wales run the schemes axis
+  # fails this and the other two clear it. See docs/adr/0001.
+  thresholds:
+    schemes_warn: 0.70
+    envelope_warn: 0.70
+    supply_warn: 0.70
 
 # ---------------------------------------------------------------------------
 # Accessibility / supply.
 # ---------------------------------------------------------------------------
 accessibility:
-  provider: osrm             # haversine | osrm | ors  (haversine = stub default)
+  provider: haversine        # haversine | osrm | ors
+  # haversine is the SHIPPED DEFAULT so a fresh clone reproduces the committed
+  # numbers with no server running. Switch to osrm/ors locally for real routing
+  # and re-run the pipeline; the map and PDF report the provider actually used.
   catchment_minutes: 30      # groups reachable within this threshold
+  # Supply index = travel_weight*(1 - travel_pct) + (1 - travel_weight)*catchment_norm.
+  # These were hard-coded; they are here because they gate the shortlist harder
+  # than the need weights do (86 of the per-capita top 100 sit in the bottom 8%
+  # of supply), so they must be visible and sensitivity-tested like any weight.
+  travel_weight: 0.6
   assumed_speed_kmh: 40      # haversine stub: straight-line speed -> minutes
   matrix_cache: data/interim/travel_matrix   # real-provider matrices cached here
   # Self-hosted OSRM road routing (set provider: osrm to use). The server's

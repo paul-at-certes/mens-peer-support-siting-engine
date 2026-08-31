@@ -1,9 +1,13 @@
 """End-to-end pipeline. Run with:  python -m src.pipeline
 
 Reads from data/raw/ (or generates the synthetic fixture when mode==synthetic),
-writes versioned Parquet through data/interim/ to data/output/fact_score.parquet,
-and persists the calibration weights. No hidden state — every step reads/writes
-files on disk.
+writes versioned Parquet through data/interim/ to data/output/fact_score.parquet.
+No hidden state — every step reads/writes files on disk.
+
+Scoring weights are declared in config.yaml, so calibration is a CHECK on them
+rather than a prerequisite (docs/adr/0001-calibration-as-veto.md). It runs
+non-blocking: the outcome dataset is England-only, and Wales must still be
+rankable when it is missing.
 """
 
 from __future__ import annotations
@@ -25,6 +29,18 @@ def _ensure_synthetic(cfg: Config) -> None:
         print(f"[pipeline] using existing synthetic fixture in {out_dir}")
 
 
+def _try(label: str, fn, *args):
+    """Run a non-blocking step. A failure here degrades the run, never ends it —
+    scoring depends on the declared weights, not on this."""
+    try:
+        return fn(*args)
+    except Exception as exc:
+        print(f"\n[pipeline] WARNING: {label} step failed ({type(exc).__name__}: {exc}).")
+        print(f"[pipeline] Continuing — scoring uses the declared weights in config.yaml.")
+        print(f"[pipeline] The {label} check will be reported as 'not run'.\n")
+        return None
+
+
 def run(cfg: Config | None = None) -> None:
     cfg = cfg or load_config()
     print(f"[pipeline] mode={cfg.mode}  nations={cfg.nations}")
@@ -40,9 +56,9 @@ def run(cfg: Config | None = None) -> None:
     occupation.run(cfg)
     isolation.run(cfg)
 
-    # 3) Suicide signal + LA-level calibration -> learned weights
-    suicide_la.run(cfg)
-    calibrate.run(cfg)
+    # 3) Suicide signal + LA-level check on the declared weights (non-blocking)
+    _try("suicide signal", suicide_la.run, cfg)
+    _try("calibration", calibrate.run, cfg)
 
     # 4) Provision + accessibility (supply surface)
     prov = provision.run(cfg)
@@ -57,8 +73,8 @@ def run(cfg: Config | None = None) -> None:
     print("\n[pipeline] done. Outputs:")
     print(f"   {cfg.path('fact_score')}")
     print(f"   {cfg.path('scored_geojson')}")
-    print(f"   {cfg.path('weights')}")
-    print(f"   {cfg.path('sensitivity')}")
+    print(f"   {cfg.path('weights')}       (calibration diagnostic)")
+    print(f"   {cfg.path('sensitivity')}   (three-axis stability report)")
     print("\n   Launch the map with:  streamlit run app/streamlit_app.py")
 
 
