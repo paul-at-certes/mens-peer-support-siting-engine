@@ -94,12 +94,15 @@ caveats. In brief:
 | Occupation | Nomis Census 2021 RM107 (SOC major groups 5/8/9, male) |
 | Isolation | Nomis Census 2021 RM074 (marital) + TS003 (one-person households) |
 | Deprivation | IMD 2019 (England scores) + WIMD 2019 (Wales ranks), LSOA 2011→2021 |
-| Suicide signal | OHID Fingertips indicator 41001 (male, age 10+, England) |
+| Suicide signal | Nomis NM_161_1 / ONS registrations (male, all ages, X60-X84 + Y10-Y34, 5-yr pooled, England & Wales) |
 | Provision | Andy's Man Club group finder (live harvest) |
 
 Key real-data honesty notes (also surfaced on the map face):
-- **Suicide is England-only and age 10+** → the weight check is England-only;
-  Wales scores on its proxies with a neutral suicide term.
+- **Suicide counts are male all-ages, England & Wales, 331 LAs.** Working age is
+  not obtainable at LA level: the publisher zeroes any cell below 5, which at
+  working-age-band granularity loses ~52% of deaths. All ages recovers 96.6% —
+  measured, see [ADR 0001](docs/adr/0001-calibration-as-veto.md). The proxies are
+  working-age measures, so the outcome is broader than the population targeted.
 - **Occupation is SOC major-group, residence-based**; **living-alone** is a
   one-person-household share (no sex-broken figure exists at LSOA).
 - **Travel time defaults to the haversine stub** (straight-line over-states rural

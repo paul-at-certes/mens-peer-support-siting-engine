@@ -38,11 +38,14 @@ def data_caveats(cfg: Config) -> list[dict]:
     return [
         _entry("Suicide signal", f"""
             {v['suicide']}. Local-Authority grain only, with a ~200-270 day registration
-            lag and small-number suppression, so it CHECKS the weighting and contributes
-            one low-weighted term — it never ranks areas on its own. No small-area
-            suicide rate is fabricated. The source is age 10+ (not strictly 16-64) and
-            England-only, so Welsh areas carry a neutral suicide term and are ranked on
-            their proxies alone."""),
+            lag, so it CHECKS the weighting and contributes one low-weighted term — it
+            never ranks areas on its own. No small-area suicide rate is fabricated.
+            Covers England AND Wales. Counts are male ALL AGES, not working age: the
+            publisher zeroes any cell below 5, which at working-age-band granularity
+            loses about half the deaths and loses them disproportionately in small local
+            authorities. All-ages recovers 96.6% of the published national total; the
+            remaining ~3.4% is lost to that same rule. The proxies are working-age
+            measures, so the outcome is broader than the population targeted."""),
         _entry("Deprivation", f"""
             {v['deprivation']}. Within-nation percentiles only (England publishes scores,
             Wales publishes ranks — not comparable across the border). Collinear with both

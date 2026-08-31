@@ -87,8 +87,8 @@ def test_scoring_weights_come_from_config(tmp_path):
 
 
 def test_scoring_survives_calibration_failure(tmp_path):
-    """Calibration is a check, not a prerequisite: the outcome dataset is
-    England-only, and Wales must stay rankable when it is missing."""
+    """Calibration is a check, not a prerequisite: the outcome needs a live fetch,
+    and a nation without a suicide source must stay rankable."""
     cfg = _temp_cfg(tmp_path)
 
     def _boom(_cfg):

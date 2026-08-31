@@ -48,8 +48,8 @@ def declared_weights(cfg: Config) -> tuple[dict, float]:
 
     This is the ONLY source of scoring weights. calibrate.py writes a diagnostic
     report to weights.json, but scoring never reads it — so the pipeline scores
-    with or without an outcome dataset (which matters: the outcome source is
-    England-only, and Wales must still be rankable).
+    with or without an outcome dataset (which matters: the outcome needs a live
+    fetch and covers England and Wales only).
     """
     sc = cfg["scoring"]
     comp = {c: float(sc["component_weights"][c]) for c in PROXY_COMPONENTS}
@@ -93,8 +93,8 @@ def prepare_components(cfg: Config, travel_weight: float | None = None,
     # only downward mapping of the outcome, and it stays a single low-weighted
     # LA-level term — we never fabricate a small-area suicide rate. Missing LAs
     # are filled with the WITHIN-NATION median (never across the border); a
-    # nation with no suicide source at all (e.g. Wales, absent from Fingertips)
-    # gets a neutral term below so its ranking rests on the proxies.
+    # nation with no suicide source at all (Scotland and NI, once their adapters
+    # land) gets a neutral term below so its ranking rests on the proxies.
     df = df.merge(suicide[["la_code", "rate_per_100k"]], on="la_code", how="left")
     df["suicide_signal_la"] = df.groupby("nation")["rate_per_100k"].transform(
         lambda s: s.fillna(s.median()) if s.notna().any() else s)

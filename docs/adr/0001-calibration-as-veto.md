@@ -129,10 +129,55 @@ and it is why the shortlist is presented as a starting point for local judgement
   because deprivation came out collinear is less useful than one that produces
   it with the caveat attached.
 
+## Addendum, 2026-08-31 — the outcome dataset
+
+Resolved, though not the way this ADR first assumed. Three findings:
+
+**The ONS *Suicides by local authority* workbook cannot be used.** It was
+downloaded and read: it is **persons-only**. Neither count table carries a sex
+breakdown, so it cannot answer a question about men.
+
+**Nomis `NM_161_1` can.** *Mortality statistics: underlying cause, sex and age*
+exposes cause x sex x age x LA for England and Wales over the same API the
+occupation and isolation adapters already use — no manual download. It now
+supplies the outcome: male, ICD-10 X60-X84 + Y10-Y34, 5-year pooled, geography
+`TYPE434`, **331 LAs (309 England, 22 Wales)**, up from 292 England-only.
+
+**Working age is not obtainable at LA level, and this was measured, not assumed.**
+Nomis zeroes any cell below 5. At LA x cause x 5-year-age-band x year granularity
+almost every cell is below 5 — across 33,900 cells the extract contains no value
+of 1, 2, 3 or 4 anywhere:
+
+| request | share of published national total recovered |
+|---|---|
+| male 15-64, X60-X84 + Y10-Y34 | **~48%** |
+| male all ages, X60-X84 + Y10-Y34 | **96.6%** |
+| male all ages, X60-X84 only | 99.5% |
+
+A working-age series that silently loses half its deaths — disproportionately in
+small local authorities, which is exactly where the regression is most fragile —
+is worse for calibration than a nearly complete all-ages one. So the outcome is
+**male all ages**, with male all-ages population as the offset, keeping numerator
+and denominator matched.
+
+The coefficients barely moved, which is reassuring about the whole design:
+
+| | Fingertips, 292 LAs | Nomis, 331 LAs |
+|---|---|---|
+| deprivation RR (univariate) | 1.107 | 1.102 |
+| occupation RR | 1.136 | 1.136 |
+| isolation RR | 1.068 | 1.069 |
+| veto | pass (collinearity note) | pass (collinearity note) |
+
+**Wales now has a real suicide signal** for the first time — 22 distinct LA values
+across 1,917 LSOAs, mean pooled rate 89.0 per 100k against England's 69.8. It was
+previously carrying the neutral 0.5 fallback.
+
 ## Still open
 
-- **ONS registrations** (male, working-age, 5-year pooled, England **and**
-  Wales) should replace Fingertips 41001 as the outcome. Manual download; until
-  then the check is England-only, age 10+, 3-year pooled, and Welsh areas are
-  ranked on their proxies with a neutral suicide term.
+- **Working-age suicide counts at LA level.** Blocked by disclosure control, not
+  by data access. An ONS bespoke tabulation is the only route; the all-ages
+  outcome is broader than the working-age population the proxies describe.
+- **~3.4% of deaths lost** to the below-5 rule, falling disproportionately in
+  small local authorities.
 - **Public transport** is unmodelled; travel time is car-only.

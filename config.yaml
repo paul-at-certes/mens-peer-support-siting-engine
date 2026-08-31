@@ -35,7 +35,8 @@ paths:
 # Data vintages — surfaced on the map face for honesty about lag.
 # ---------------------------------------------------------------------------
 vintages:
-  suicide: "OHID Fingertips 41001 — male, 3yr-pooled (latest), age 10+, England only"
+  suicide: "Nomis NM_161_1 (ONS registrations) — male, all ages, X60-X84 + Y10-Y34,
+            5yr-pooled 2020-2024, England & Wales, 331 LAs"
   deprivation: "IMD 2019 (England, scores) / WIMD 2019 (Wales, ranks); LSOA 2011 -> 2021"
   census: "Census 2021 (England & Wales, Nomis)"
   population: "Census 2021 usual residents by sex & age (Nomis RM121)"

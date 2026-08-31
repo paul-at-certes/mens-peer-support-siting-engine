@@ -6,8 +6,9 @@ No hidden state — every step reads/writes files on disk.
 
 Scoring weights are declared in config.yaml, so calibration is a CHECK on them
 rather than a prerequisite (docs/adr/0001-calibration-as-veto.md). It runs
-non-blocking: the outcome dataset is England-only, and Wales must still be
-rankable when it is missing.
+non-blocking: the outcome requires a live fetch and covers England and Wales
+only, so a network failure or a nation without a suicide source must degrade the
+run, not end it.
 """
 
 from __future__ import annotations
