@@ -22,6 +22,12 @@ Two views are produced side by side:
 All normalisation is WITHIN-NATION — IMD/WIMD/SIMD and the censuses are not
 comparable across borders, so the UK view is stitched percentiles, never a raw
 cross-border scale.
+
+One column, ``no_car_share``, is carried purely as CONTEXT. It is attached after
+the score is computed, deliberately outside ``prepare_components``, so it cannot
+reach need_index, supply_index, priority_score, the factor breakdown, the tiers
+or the sensitivity analysis. It says where the car-only travel time overstates
+access; it does not change the ranking. See src/ingest/car_access.py.
 """
 
 from __future__ import annotations
@@ -142,6 +148,20 @@ def apply_weights(df: pd.DataFrame, comp_w: dict, w_suicide: float):
     return need_index, priority, reach, contrib, total_w
 
 
+def _car_access(cfg: Config) -> pd.Series:
+    """Share of households with no car or van, per area. Empty if not ingested.
+
+    DESCRIPTIVE ONLY — never an input to a score. Kept out of
+    prepare_components() so no weighting scheme, tier or sensitivity draw can
+    reach it even by accident.
+    """
+    path = cfg.path("interim") / "fact_car_access.parquet"
+    if not path.exists():
+        return pd.Series(dtype="float64", name="no_car_share")
+    car = pd.read_parquet(path)
+    return car.set_index("area_code")["no_car_share"].astype(float)
+
+
 def run(cfg: Config) -> pd.DataFrame:
     comp_w, w_suicide = declared_weights(cfg)
     df = prepare_components(cfg)
@@ -154,6 +174,12 @@ def run(cfg: Config) -> pd.DataFrame:
     df["rank"] = df["priority_score"].rank(ascending=False, method="min").astype(int)
     df["rank_reach"] = df["reach_score"].rank(ascending=False, method="min").astype(int)
     df["percentile"] = _within_nation_pct(df, "priority_score")
+
+    # --- Descriptive context: car or van availability ----------------------
+    # Attached here, after every score is settled, precisely so it cannot enter
+    # one. Optional: the fetch is non-blocking in the pipeline, and an area with
+    # no figure shows no figure rather than a made-up one.
+    df["no_car_share"] = _car_access(cfg).reindex(df["area_code"].to_numpy()).to_numpy()
 
     # --- Factor breakdown (per-area explanation) ---------------------------
     def _breakdown(i: int) -> str:
@@ -188,7 +214,7 @@ def run(cfg: Config) -> pd.DataFrame:
         "centroid_lon", "centroid_lat", "male_working_age_pop",
         "need_index", "supply_index", "priority_score", "reach_score",
         "rank", "rank_reach", "percentile", "travel_minutes",
-        "groups_within_catchment", "factor_breakdown",
+        "groups_within_catchment", "no_car_share", "factor_breakdown",
     ]
     out = df[cols].sort_values("priority_score", ascending=False).reset_index(drop=True)
 
