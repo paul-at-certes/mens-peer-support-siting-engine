@@ -155,6 +155,18 @@ view_df["_r"] = (200 + 55 * view_df["_norm"]).astype(int)
 view_df["_g"] = (210 * (1 - view_df["_norm"])).astype(int)
 view_df["_b"] = (210 * (1 - view_df["_norm"])).astype(int)
 view_df["_radius"] = (1500 + 6000 * view_df["_norm"]).astype(int)
+
+# Hover text. pydeck interpolates raw values into the tooltip template and has no
+# number formatting, so the displayed strings are precomputed here — otherwise a
+# score renders as 0.9440000000000001. Both layers carry the same two columns so
+# a single deck-level template serves area markers and group markers alike.
+score_name = "priority" if score_col == "priority_score" else "reach"
+view_df["_tip_title"] = view_df["area_code"] + " — " + view_df["area_name"].astype(str)
+view_df["_tip_body"] = (
+    score_name + ": " + view_df[score_col].map("{:,.2f}".format)
+    + "\nneed: " + view_df["need_index"].map("{:.2f}".format)
+    + "   supply: " + view_df["supply_index"].map("{:.2f}".format)
+)
 map_df = view_df[map_df_filter]
 
 # --- Map --------------------------------------------------------------------
@@ -173,9 +185,14 @@ with left:
         )
     ]
     if show_groups and len(groups):
+        group_pts = groups.copy()
+        group_pts["_tip_title"] = (group_pts["name"].astype(str) + " ("
+                                   + group_pts["org"].astype(str) + ")")
+        group_pts["_tip_body"] = ("existing group · " + group_pts["status"].astype(str)
+                                  + "\n" + group_pts["postcode"].astype(str))
         layers.append(pdk.Layer(
             "ScatterplotLayer",
-            data=groups,
+            data=group_pts,
             get_position="[lon, lat]",
             get_fill_color="[30, 90, 200, 230]",
             get_radius=2200,
@@ -187,8 +204,7 @@ with left:
         longitude=float(centre["centroid_lon"].mean()),
         zoom=6,
     )
-    tooltip = {"text": "{area_code}\n" + score_col + ": {" + score_col + "}\n"
-                       "need: {need_index}  supply: {supply_index}"}
+    tooltip = {"text": "{_tip_title}\n{_tip_body}"}
     st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view_state,
                              tooltip=tooltip, map_style=None))
     st.caption(
