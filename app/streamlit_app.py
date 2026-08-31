@@ -66,10 +66,19 @@ st.caption(
     "deaths or score individuals. The output is a **shortlist for local judgement**, "
     "not an automated siting decision."
 )
-if weights_meta:
-    st.caption(f"Weighting scheme: **{weights_meta.get('active_scheme','?')}** · "
-               f"calibrated on {weights_meta.get('n_las','?')} LAs "
-               f"({weights_meta.get('family','?')} model). See the robustness panel below.")
+_dw = cfg["scoring"]["component_weights"]
+_veto_status = (weights_meta.get("veto", {}) or {}).get("status")
+_veto_label = {"pass": "✅ passed", "collinearity": "✅ passed (collinearity noted)",
+               "unsupported": "⚠️ flagged", "contradicted": "🚩 flagged"}.get(
+    _veto_status, "not run")
+st.caption(
+    f"Declared weights: **{_dw['deprivation']:.2f}** deprivation · "
+    f"**{_dw['occupation']:.2f}** occupation · **{_dw['isolation']:.2f}** isolation "
+    f"(stated in `config.yaml`, not fitted). LA-level veto check: **{_veto_label}**"
+    + (f" on {weights_meta['n_las']} LAs ({weights_meta.get('family','?')} model)."
+       if weights_meta else ".")
+    + " See the weighting & robustness panel below."
+)
 
 # --- Sidebar: view + filters ------------------------------------------------
 view = st.sidebar.radio(
