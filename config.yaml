@@ -97,7 +97,7 @@ calibration:
 # Scoring weights — a DECLARED PRIOR, not a fitted result.
 #
 # need_index is an allocation index, not a calibrated surrogate for suicide
-# risk (docs/adr/0001-calibration-as-veto.md). With 292 LAs and three mutually
+# risk (docs/adr/0001-calibration-as-veto.md). With 331 LAs and three mutually
 # collinear proxies the LA-level fit does not identify these weights: equal
 # weights disagrees with each fitted scheme about as much as the fitted schemes
 # disagree with each other. So the weights below are stated up front and
@@ -176,7 +176,7 @@ accessibility:
   #
   # Set `haversine` to run with no server at all — straight-line distance at a
   # constant speed, which over-states accessibility (median nearest group 10.2
-  # min straight-line vs 14.8 min by road). The map and PDF always report the
+  # min straight-line vs 13.8 min by road). The map and PDF always report the
   # provider that actually produced the numbers.
   catchment_minutes: 30      # groups reachable within this threshold
   # Supply index = travel_weight*(1 - travel_pct) + (1 - travel_weight)*catchment_norm.

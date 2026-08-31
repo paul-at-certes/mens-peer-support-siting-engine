@@ -278,18 +278,62 @@ st.markdown(
 )
 
 c1, c2 = st.columns(2)
+# What the council-level check actually found on THIS build. Read from
+# weights.json, not stated: this page claims at the bottom that every figure on
+# it comes from the pipeline's own outputs, and this paragraph used to be the
+# exception — it asserted "all four point the right way" when three factors are
+# tested, not four, and when the current run in fact reports a sign flip.
+_uni = (F.get("weights") or {}).get("univariate_fit") or {}
+_flipped = [k for k, c in ((F.get("weights") or {}).get("components") or {}).items()
+            if c.get("collinearity_signflip")]
+_right_way = [k for k, u in _uni.items() if u["ci"][0] > 0]
+_wrong_way = [k for k, u in _uni.items() if u["ci"][1] < 0]
+_names = {"deprivation": "poverty", "occupation": "high-risk jobs",
+          "isolation": "isolation"}
+
+
+def _plain(keys):
+    words = [_names.get(k, k) for k in keys]
+    return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
+
+
 with c1:
     st.markdown("##### A check at council level")
-    st.markdown(
-        """
-        The tool adds its four factors up for each whole council area, where
-        suicide figures do exist, and asks whether those factors really do line up
-        with higher suicide rates.
+    if not _uni:
+        st.markdown(
+            """
+            The tool adds each of its factors up for whole council areas, where
+            suicide figures do exist, and asks whether those factors really do line
+            up with higher suicide rates.
 
-        They do. All four point the right way. Had any pointed the wrong way, the
-        tool would say so on screen rather than carry on quietly.
-        """
-    )
+            That check has not run on this build, so the weighting below is stated
+            but unchecked. It still produced the lists you see.
+            """
+        )
+    else:
+        _found = (f"All {len(_uni)} point the right way." if len(_right_way) == len(_uni)
+                  else (f"{_plain(_right_way)} point the right way; "
+                        f"{_plain(_wrong_way)} points the other way, and the tool says "
+                        f"so on the map page rather than carrying on quietly."
+                        if _wrong_way else
+                        f"{_plain(_right_way)} point the right way; the rest cannot be "
+                        f"told apart from no effect at all."))
+        _flip = ""
+        if _flipped:
+            _flip = (f" One thing to know: taken on its own {_plain(_flipped)} points "
+                     f"the right way, but it changes direction when all {len(_uni)} are "
+                     f"put into the same calculation, because they overlap so heavily. "
+                     f"That overlap is the reason the weighting is written down rather "
+                     f"than worked out — section 7. The map page reports it too.")
+        st.markdown(
+            f"""
+            The tool adds each of its {len(_uni)} factors up for whole council areas,
+            where suicide figures do exist, and asks whether those factors really do
+            line up with higher suicide rates.
+
+            {_found}{_flip}
+            """
+        )
 with c2:
     st.markdown("##### A small nudge in the score")
     st.markdown(
@@ -530,7 +574,13 @@ if _bs.get("n_flagged"):
     c1.metric("Areas marked", f"{_bs['n_flagged']:,}")
     c2.metric("Best of them, nationally",
               f"#{_bs.get('ranking', {}).get('best_rank', 0):,}")
-    c3.metric("Reaching the shortlist", "0")
+    # Read, not stated. The same claim in words is in section 10's caption and
+    # in the PDF, and all three now come from the same recorded figure.
+    _ac = (_bs.get("ranking", {}).get("across_configurations") or {}).get("per_capita")
+    c3.metric("Reaching the shortlist",
+              "not measured" if not _ac else f"{_ac['n_shortlist_tier']:,}",
+              help="Areas marked here that sit inside the top 100 of the per-capita "
+                   "ranking under every configuration tested.")
     st.caption(
         "Read the mark as a statement about this ranking, not about the place. It "
         "says the ranking is blind there. It does not say a group should open there "

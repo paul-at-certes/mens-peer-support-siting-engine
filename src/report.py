@@ -374,6 +374,38 @@ def run(cfg: Config) -> "Path":  # type: ignore[name-defined]
     return out_path
 
 
+def _across_config_clause(cfg, ranking: dict) -> str:
+    """How the flagged areas fare across configurations, on the view this PDF features.
+
+    Read from blind_spot.json, never asserted. This sentence used to read "none
+    reaches the top 100 under any configuration tested", which nothing computed
+    — and which was false for the reach view this report leads with by default,
+    where one flagged area reaches rank 21 under an alternative configuration.
+    """
+    view = (cfg.get("report", {}) or {}).get("view", "reach")
+    key = "per_capita" if view == "per_capita" else "reach"
+    word = "per-capita" if view == "per_capita" else "reach"
+    ac = (ranking.get("across_configurations") or {}).get(key)
+    if not ac:
+        return ("and how they fare under alternative configurations was not measured "
+                "on this run")
+    n_short, n_some = ac["n_shortlist_tier"], ac["n_reaching_under_some_config"]
+    if not n_some:
+        return (f"and <b>none</b> of them reaches the shortlist on the {word} ranking "
+                f"under any configuration tested — which is the whole reason for "
+                f"naming them separately")
+    best = ac.get("best_rank_any_config")
+    where = f", the best of them reaching rank {best:,}" if best else ""
+    if not n_short:
+        return (f"and <b>{n_some:,}</b> of them "
+                f"{'reaches' if n_some == 1 else 'reach'} the shortlist on the {word} "
+                f"ranking under some configurations{where}, though not under all of "
+                f"them")
+    return (f"and <b>{n_short:,}</b> of them "
+            f"{'holds' if n_short == 1 else 'hold'} a place on the {word} shortlist "
+            f"under every configuration tested{where}")
+
+
 def _remote_and_blind_spot(cfg, df, story, top_n, h2, foot, reason_num, reason,
                            cell, cell_b, NAVY, colors, mm, Paragraph, Spacer,
                            Table, TableStyle) -> None:
@@ -493,9 +525,8 @@ def _remote_and_blind_spot(cfg, df, story, top_n, h2, foot, reason_num, reason,
             f"<b>{bs['n_flagged']:,}</b> of {bs['n_areas']:,} areas "
             f"({bs['share_flagged']:.1%}) meet that test. They rank at a median of "
             f"{rank.get('median_rank', 0):,}, the best of them "
-            f"{rank.get('best_rank', 0):,}, and <b>none</b> reaches the top 100 under "
-            f"any configuration tested — which is the whole reason for naming them "
-            f"separately. The nearest group is a median of "
+            f"{rank.get('best_rank', 0):,}, {_across_config_clause(cfg, rank)}. "
+            f"The nearest group is a median of "
             f"{prof.get('median_travel_minutes', 0):.0f} minutes away, and they sit at "
             f"{prof.get('median_supply_index', 0):.2f} on the supply index against "
             f"{prof.get('all_areas_median_supply_index', 0):.2f} for all areas, so most "
