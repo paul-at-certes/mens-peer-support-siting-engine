@@ -67,7 +67,9 @@ siting-engine/
     score.py                # need_index, supply_index, priority_score, factor_breakdown
     pipeline.py             # runs the whole thing end-to-end
   app/
-    streamlit_app.py        # map + two views + per-area breakdown
+    streamlit_app.py        # entry point: routes the pages below
+    views/priority_map.py   # map + two views + per-area breakdown
+    views/guide.py          # plain-English guide for non-technical readers
   docs/
     design.md               # full methodology (paste the design note here)
   tests/

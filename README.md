@@ -61,7 +61,18 @@ python -m src.report
 #    -> data/output/amc_top20_report.pdf
 ```
 
-### The map (`streamlit run app/streamlit_app.py`)
+### The app (`streamlit run app/streamlit_app.py`)
+
+Two pages, routed from `app/streamlit_app.py`:
+
+- **🗺️ Priority map** — the ranked surface, both views, per-area breakdowns.
+- **📖 Beginner's guide** — a plain-English explanation of what the tool is,
+  where every dataset comes from, how the factors are combined and how the tiers
+  are decided, written for a non-technical reader with no statistics background.
+  Every figure on it is read live from the pipeline's own outputs, so it cannot
+  drift out of step with what the tool actually produced.
+
+#### The map page
 
 The priority surface runs **full width**, with the ranked shortlist and the
 per-area factor breakdown side by side beneath it. **Selecting a row in the
@@ -258,7 +269,10 @@ src/
   caveats.py             # single source of the caveat/assurance copy (map + PDF)
   score.py               # need_index, supply_index, priority_score, factor_breakdown
   pipeline.py            # runs the whole thing
-app/streamlit_app.py     # map + two views + per-area breakdown + caveats
+app/
+  streamlit_app.py       # entry point: routes the two pages below
+  views/priority_map.py  # map + two views + per-area breakdown + caveats
+  views/guide.py         # plain-English guide for non-technical readers
 data/{raw,interim,output}/
 tests/
 ```
@@ -273,7 +287,7 @@ raw (downloaded / synthetic)
   → calibrate.py        → weights.json   (LA-level veto; non-blocking)
   → accessibility.py    → fact_accessibility   (TravelTimeProvider)
   → score.py            → fact_score.parquet + .geojson   (need × (1 − supply))
-  → streamlit_app.py    → map
+  → app/views/          → map + guide
 ```
 
 ## Guardrails (enforced in code & UI)
