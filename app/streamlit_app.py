@@ -220,13 +220,19 @@ with right:
     st.subheader(f"Top {top_n} shortlist")
     ranked = view_df.sort_values(score_col, ascending=False).head(top_n)
     rank_col = "rank" if score_col == "priority_score" else "rank_reach"
-    tbl_cols = [rank_col, "area_code", "nation"]
+    tbl_cols = [rank_col, "area_code", "area_name", "nation"]
     if "tier" in ranked.columns:
         tbl_cols.append("tier_label")
     tbl_cols += ["need_index", "supply_index", score_col]
     st.dataframe(
-        ranked[tbl_cols].rename(columns={score_col: "score", "tier_label": "tier"}),
+        ranked[tbl_cols].rename(columns={score_col: "score", "tier_label": "tier",
+                                         "area_name": "area"}),
         hide_index=True, use_container_width=True,
+        column_config={
+            "need_index": st.column_config.NumberColumn("need", format="%.2f"),
+            "supply_index": st.column_config.NumberColumn("supply", format="%.2f"),
+            "score": st.column_config.NumberColumn(format="%.2f"),
+        },
     )
     if "tier" in ranked.columns:
         st.caption(
