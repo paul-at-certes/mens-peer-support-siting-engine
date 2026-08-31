@@ -2,8 +2,8 @@
 
 Ranks UK small areas by **unmet need for a men's peer-support group** (think
 Andy's Man Club) to help prioritise where to open new groups. It combines a
-calibrated **need surface** (deprivation, high-risk male occupation, isolation,
-plus a Local-Authority suicide signal) with a **supply surface** (travel time to
+**need surface** (deprivation, high-risk male occupation, isolation, plus a
+Local-Authority suicide signal) with a **supply surface** (travel time to
 existing groups) to produce a ranked, mapped shortlist with a transparent
 per-area factor breakdown.
 
@@ -22,10 +22,13 @@ The whole pipeline runs end-to-end on a **synthetic fixture** with zero external
 dependencies, so you can see it working before wiring in any real dataset. Then
 real sources swap in one at a time behind the same interfaces.
 
-- **Two-level model** — proxy weights are *learned* at Local-Authority level
-  (Poisson/NegBin regression of pooled male working-age suicide counts on the
-  aggregated proxies, population offset), then *applied* to small-area proxies.
-  No small-area suicide rate is ever fabricated.
+- **Two-level model** — proxy weights are **declared** in `config.yaml` and
+  **checked** at Local-Authority level (Poisson/NegBin regression of pooled male
+  suicide counts on the aggregated proxies, at-risk population offset), then
+  applied to small-area proxies. The fit vetoes any weight the data contradicts;
+  it does not supply one, because with ~292 LAs and three collinear proxies it
+  cannot identify them ([ADR 0001](docs/adr/0001-calibration-as-veto.md)). No
+  small-area suicide rate is ever fabricated.
 - **Within-nation normalisation** — IMD/WIMD/SIMD aren't comparable across
   borders, so everything is percentile-ranked within nation. v1 ships
   **England & Wales**; Scotland/NI are documented stubs.
@@ -46,7 +49,8 @@ pip install -e .   # or: pip install numpy pandas pyarrow statsmodels pyyaml req
 #    to run the instant offline fixture instead.
 python -m src.pipeline
 #    -> data/output/fact_score.parquet, fact_score.geojson, weights.json
-#    -> prints calibration weights with confidence intervals
+#    -> prints the declared weights, the LA-level veto verdict, and a
+#       three-axis shortlist-stability report
 
 # 2) Launch the map
 streamlit run app/streamlit_app.py
@@ -94,7 +98,7 @@ caveats. In brief:
 | Provision | Andy's Man Club group finder (live harvest) |
 
 Key real-data honesty notes (also surfaced on the map face):
-- **Suicide is England-only and age 10+** → weights are England-calibrated;
+- **Suicide is England-only and age 10+** → the weight check is England-only;
   Wales scores on its proxies with a neutral suicide term.
 - **Occupation is SOC major-group, residence-based**; **living-alone** is a
   one-person-household share (no sex-broken figure exists at LSOA).
@@ -121,25 +125,41 @@ then. (ORS remains a stub behind the same interface.)
 
 ## Weighting & sensitivity
 
-The proxy weights are *learned* at LA level, but the proxies are collinear
-(deprivation, occupation and isolation all track disadvantage), so partial GLM
-coefficients are fragile — `calibrate.py` fits **three** schemes and
-`sensitivity.py` (design.md §7) tests how much the shortlist depends on the
-choice:
+**The weights are a declared prior, not a fitted result.** They live in
+`config.yaml` under `scoring.component_weights` (0.40 deprivation / 0.35
+occupation / 0.25 isolation) and are applied to within-nation percentile ranks.
 
-| Scheme | Idea | Caveat |
+The reason is in [ADR 0001](docs/adr/0001-calibration-as-veto.md): at LA level
+the three proxies are mutually collinear (deprivation correlates 0.72 with
+isolation, 0.63 with occupation), so the multivariable fit returns deprivation as
+significantly *protective*, and equal weights disagrees with each fitted scheme
+about as much as they disagree with each other. The model cannot identify these
+weights — but the choice still moves up to 12 of the top 20 areas. So we state
+the weights, defend them, and use the fit to **veto** any the data contradicts.
+
+`calibrate.py` prints the check. Severities: `contradicted` (the LA fit puts the
+proxy's confidence interval entirely below zero), `unsupported` (the interval
+spans zero and we lean on the proxy anyway), `collinearity` (informational).
+
+`sensitivity.py` then asks whether our choices moved the shortlist, on three
+axes, each scored against the shipped configuration's top-100:
+
+| Axis | What varies | England & Wales result |
 |---|---|---|
-| `multivariable` | partial coefficients of the 3-proxy GLM | collinearity zeroes **deprivation**; top-100 only ~35–47% overlaps the others |
-| `univariate` *(default)* | each proxy weighted by its **own** association with suicide | keeps all three proxies; mild double-counting of correlated economic proxies |
-| `composite` | merge deprivation+occupation into one disadvantage factor vs isolation | here the isolation coef flips negative, zeroing **isolation** |
+| **Alternative weightings** | declared vs equal vs the three fitted schemes | **0.46** worst (multivariable) — ⚠️ below the 0.70 threshold |
+| **CI envelope** | weights drawn from the LA fit's confidence intervals | 0.84 mean over 200 draws — ok |
+| **Supply constants** | travel/catchment split, 5×3 sweep | 0.74 worst — ok |
 
-**Finding:** within any scheme the shortlist is very stable (≈99% retention under
-CI perturbation; **0** low-confidence areas), but the *choice of scheme* moves the
-top-100 materially. We therefore default to **univariate** — the only scheme that
-keeps all three theoretically-grounded proxies contributing — as a deliberate,
-documented decision (set `scoring.weighting_scheme` in `config.yaml` to compare).
-`sensitivity.json` records the per-area robustness and any low-confidence flags;
-the app surfaces both.
+**Findings.** The shortlist is *not* robust to the choice of weighting, and the
+tool says so on the map face and in the PDF rather than burying it. It **is**
+robust to the supply constants — which is the opposite of what we expected,
+since the supply surface gates the shortlist hardest (most of the per-capita top
+100 sits in the bottom decile of supply). Thresholds are set from what the number
+means for the decision, not tuned until the data passes.
+
+`sensitivity.json` records per-area robustness and low-confidence flags; the app
+and the PDF surface both. Treat the output as a **shortlist for local judgement**,
+not a ranking.
 
 ## Repo layout
 
@@ -155,7 +175,8 @@ src/
                          #   + scotland_ni_stubs.py (documented stubs)
   travel_time.py         # TravelTimeProvider: haversine stub + OSRM/ORS stubs
   accessibility.py       # fact_accessibility (supply surface)
-  calibrate.py           # LA-level GLM -> learned weights (+ CIs) -> weights.json
+  calibrate.py           # LA-level GLM -> VETO on the declared weights -> weights.json
+  caveats.py             # single source of the caveat/assurance copy (map + PDF)
   score.py               # need_index, supply_index, priority_score, factor_breakdown
   pipeline.py            # runs the whole thing
 app/streamlit_app.py     # map + two views + per-area breakdown + caveats
@@ -170,7 +191,7 @@ raw (downloaded / synthetic)
   → geography.py        → dim_geography, dim_population
   → ingest/*            → fact_deprivation, fact_occupation, fact_isolation,
                           fact_suicide_la, dim_provision
-  → calibrate.py        → weights.json   (LA-level regression)
+  → calibrate.py        → weights.json   (LA-level veto; non-blocking)
   → accessibility.py    → fact_accessibility   (TravelTimeProvider)
   → score.py            → fact_score.parquet + .geojson   (need × (1 − supply))
   → streamlit_app.py    → map

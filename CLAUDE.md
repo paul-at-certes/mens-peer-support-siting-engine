@@ -30,7 +30,9 @@ Suicide data only exists reliably at **Local Authority** level (small numbers + 
 
 Instead, implement the two-level approach:
 
-1. **Calibrate at LA level** — aggregate the small-area proxies up to LA, fit an interpretable model (Poisson or negative-binomial regression of pooled male suicide *counts* on the proxies, population as offset). The coefficients become the proxy weights, with confidence intervals.
+1. **Check at LA level** — aggregate the small-area proxies up to LA, fit an interpretable model (Poisson or negative-binomial regression of pooled male suicide *counts* on the proxies, at-risk population as offset). The coefficients **check** the declared proxy weights; they do not set them.
+
+   > **Amended 2026-08-31 — see `docs/adr/0001-calibration-as-veto.md`.** This step originally read "the coefficients become the proxy weights, with confidence intervals". On the real data that does not hold: with ~292 LAs and three mutually collinear proxies the model does not identify the weights (deprivation comes out significantly *protective* in the multivariable fit), and equal weights disagrees with each fitted scheme about as much as they disagree with each other — while the choice still moves up to 12 of the top 20 areas. So the weights are a **declared prior** in `config.yaml`, and calibration **vetoes** any the data contradicts. The claim is now "sanity-checked at LA level", not "calibrated at LA level". Everything else about the two-level design is unchanged: **still do not invent LSOA-level suicide rates.**
 2. **Apply at small-area level** — use those weights on the small-area proxies to produce a latent `need_index` where suicide data doesn't exist.
 3. **Subtract supply** at small-area level to get `priority_score`.
 
@@ -60,7 +62,8 @@ siting-engine/
       provision.py
     travel_time.py          # TravelTimeProvider interface + haversine stub + API impl
     accessibility.py        # fact_accessibility from provision + travel time
-    calibrate.py            # LA-level regression -> weights (+ CIs)
+    calibrate.py            # LA-level regression -> VETO on the declared weights (+ CIs)
+    caveats.py              # single source of the caveat/assurance copy (map + PDF)
     score.py                # need_index, supply_index, priority_score, factor_breakdown
     pipeline.py             # runs the whole thing end-to-end
   app/
@@ -79,7 +82,7 @@ Build a **walking skeleton first**: get `pipeline.py` running end-to-end on a ti
 
 1. **Spine + population** — `geography.py`: build `dim_geography` (small-area → LA → region → nation, with centroids) and `dim_population` (male working-age 16–64). Ship with a sample fixture so everything downstream can run immediately.
 2. **Risk proxies** — `ingest/deprivation.py`, `occupation.py`, `isolation.py` → `data/interim/*.parquet`, all keyed to `area_code`. Income + employment deprivation domains specifically; male share in high-risk SOC-2020 groups (construction trades, elementary construction, agriculture, process/plant); male single/separated and living-alone proxies.
-3. **Suicide signal + calibration** — `ingest/suicide_la.py` (male, working age, 5-year pooled rate) then `calibrate.py` (the LA-level regression → weights). Print the fitted weights and CIs to the console; persist them to `config.yaml` or a `weights.json`.
+3. **Suicide signal + calibration check** — `ingest/suicide_la.py` (male, working age, 5-year pooled rate) then `calibrate.py` (the LA-level regression → a veto on the weights declared in `config.yaml`). Print the fit and CIs to the console alongside the declared weights, and persist the diagnostic to `weights.json`. The offset must be the outcome dataset's **own denominator** — pairing an age-10+ numerator with a 16–64 denominator biases the fit with local age structure. This step is **non-blocking**: the outcome source is England-only and Wales must stay rankable without it.
 4. **Provision + accessibility** — `ingest/provision.py` (geocode group locations) + `travel_time.py` (haversine stub first) + `accessibility.py` (nearest-group minutes, groups within 30-min catchment).
 5. **Score + breakdown** — `score.py`: `need_index = Σ wᵢ·proxyᵢ` (within-nation percentiles), `supply_index`, `priority_score = need_index × (1 − supply_index)`. Persist a per-area `factor_breakdown` (JSON column) so every score is explainable. Output two ranked views:
    - **Per-capita** (`priority_score`) — acute pockets.
@@ -112,7 +115,8 @@ Document every file's expected name, source URL and vintage in `data/raw/README.
 
 - `python -m src.pipeline` runs clean from `data/raw/` to `data/output/fact_score.parquet` for England & Wales.
 - `streamlit run app/streamlit_app.py` shows the ranked map, both views, per-area factor breakdowns, and existing groups.
-- Calibration weights are printed with confidence intervals and persisted.
+- Scoring weights are **declared in `config.yaml`** and defended there; the LA-level fit is printed with confidence intervals, persisted as a diagnostic, and **vetoes** any weight the data contradicts.
+- Shortlist stability is tested on **three axes** — alternative weightings, the CI envelope, and the supply constants — with the verdict surfaced on the map face and in the PDF. Thresholds are set from what the number means for the decision, never tuned until the data passes.
 - Every score decomposes into named contributing factors.
 - README documents how to obtain each dataset, run the pipeline, and launch the app.
 - Scotland/NI adapters exist as clearly-marked stubs behind the same interfaces.

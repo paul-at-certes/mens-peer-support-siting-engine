@@ -60,6 +60,24 @@ The four UK nations publish **separate, non-comparable** deprivation indices (En
 
 ## 4. Calibration model
 
+> **Amended 2026-08-31 — `docs/adr/0001-calibration-as-veto.md` supersedes the weighting
+> half of this section.** The model below is still fitted, still reported, and still the
+> basis of the checks. What changed is what its coefficients are *for*: they **check** the
+> scoring weights rather than becoming them, because on the real data they do not identify
+> them. Read this section as the specification of the check.
+>
+> Three corrections to what follows:
+> - **Weights are a declared prior** (`config.yaml` `scoring.component_weights`), applied to
+>   within-nation percentile ranks. The "exponentiated to rate ratios" instruction below is
+>   also withdrawn: rate ratios here sit near 1.0 (1.07–1.14), so normalising them to sum to
+>   1 flattens the weights toward equal and erases the signal. Relative effect size lives in
+>   the log-coefficients.
+> - **The offset is the outcome dataset's own denominator**, not male working-age
+>   population. Mixing an age-10+ numerator with a 16–64 denominator was suppressing the
+>   isolation signal (its univariate CI moved from spanning zero to entirely positive).
+> - **The composite scheme merges deprivation + isolation** (r=0.72 at LA level), the
+>   actually-collinear pair, not deprivation + occupation (r=0.63).
+
 The proxy weights are **learned, not guessed**, via an interpretable model fitted at Local Authority level.
 
 **Specification.** Regress pooled male working-age suicide **counts** on the LA-aggregated proxies, with population as an offset:
