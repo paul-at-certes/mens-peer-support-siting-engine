@@ -2,6 +2,8 @@
 name = "siting-engine"
 version = "0.1.0"
 description = "Men's Peer-Support Siting Engine — ranks UK small areas by unmet need for a men's peer-support group (aggregate open data only)."
+license = { file = "LICENSE" }
+authors = [{ name = "Paul Warner" }]
 # The brief targets 3.11+, but the code only uses `from __future__ import
 # annotations` for modern typing, so it runs on 3.9+ too. Floor set to 3.9 so it
 # installs on stock macOS Python without forcing a newer interpreter.

@@ -350,7 +350,7 @@ at length.
 
 ## Licence and attribution
 
-**Code:** see [`LICENSE`](LICENSE).
+**Code:** MIT, see [`LICENSE`](LICENSE). Lift it, adapt it, run it for your own area. The data below is licensed separately and its terms still apply.
 
 **Data:** none is redistributed here. `.gitignore` deliberately excludes
 `data/raw/`, `data/interim/` and `data/output/`, so the repository carries the
