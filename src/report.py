@@ -24,6 +24,7 @@ import sys
 
 import pandas as pd
 
+from .caveats import assurance_notes, data_caveats
 from .config import Config, load_config
 
 # Human-readable factor names (match the design note / app language).
@@ -189,13 +190,16 @@ def run(cfg: Config) -> "Path":  # type: ignore[name-defined]
 
     # --- title + framing box ------------------------------------------------
     story.append(Paragraph(rep.get("title", "Shortlist for a New Group"), h1))
-    scheme = weights_meta.get("active_scheme", "?")
-    n_las = weights_meta.get("n_las", "?")
+    dw = cfg["scoring"]["component_weights"]
+    n_las = weights_meta.get("n_las")
+    check = (f"checked against {n_las} local authorities" if n_las
+             else "not checked — no LA outcome data in this build")
     view_label = "reach — most men reached per new group" if view == "reach" \
         else "per-capita — most acute unmet need"
     story.append(Paragraph(
-        f"England &amp; Wales · ranked by <b>{view_label}</b> · "
-        f"weighting scheme <b>{scheme}</b> (calibrated on {n_las} local authorities).",
+        f"England &amp; Wales · ranked by <b>{view_label}</b> · declared weights "
+        f"<b>{dw['deprivation']:.2f}/{dw['occupation']:.2f}/{dw['isolation']:.2f}</b> "
+        f"(deprivation/occupation/isolation), {check}.",
         sub))
     story.append(Paragraph(
         "<b>What this is.</b> A prioritised shortlist of small areas (LSOAs) where the "
@@ -255,17 +259,16 @@ def run(cfg: Config) -> "Path":  # type: ignore[name-defined]
     story.append(tbl)
 
     # Robustness footnote (reach areas mostly fall outside the per-capita test).
-    p = sens.get("perturbation", {})
-    if any_missing_rob:
+    env = sens.get("envelope", {})
+    if any_missing_rob and "mean_retention" in env:
         story.append(Spacer(1, 4))
         story.append(Paragraph(
-            "“Robustness” tests whether an area stays on the shortlist when the "
-            "learned weights are perturbed across their confidence intervals. It is "
-            f"defined on the <b>per-capita</b> top-{sens.get('shortlist_n', 100)} shortlist, "
-            "so most reach-ranked areas here show “—” rather than a fabricated "
-            "score. Across the ranking as a whole the shortlist is stable: mean retention "
-            f"{p.get('mean_retention', 0):.0%}, with {p.get('n_low_confidence', 0)} "
-            "low-confidence area(s) overall.", foot))
+            "“Robustness” tests whether an area stays on the shortlist when the weights "
+            "are moved across the range the Local-Authority fit supports. It is defined "
+            f"on the <b>per-capita</b> top-{sens.get('shortlist_n', 100)} shortlist, so "
+            "most reach-ranked areas here show “—” rather than a fabricated score. "
+            f"Across the ranking as a whole: mean retention {env['mean_retention']:.0%}, "
+            f"with {env.get('n_low_confidence', 0)} low-confidence area(s).", foot))
 
     # --- per-area reasoning -------------------------------------------------
     story.append(Spacer(1, 8))
@@ -281,39 +284,20 @@ def run(cfg: Config) -> "Path":  # type: ignore[name-defined]
         ]
         story.append(KeepTogether(block))
 
-    # --- caveats & vintages (reuse the app's language) ----------------------
-    v = cfg["vintages"]
-    provider = cfg["accessibility"].get("provider", "haversine")
-    if provider == "osrm":
-        travel_note = ("real road driving times via a self-hosted OSRM routing engine "
-                       "(car; public-transport access is not yet modelled).")
-    else:
-        travel_note = (f"the {provider} provider — straight-line distance, which "
-                       "over-states accessibility in rural/estuarine areas.")
+    # --- how the weights were set, and did the checks pass? -----------------
+    # Copy comes from src/caveats.py, shared with the Streamlit map face so the
+    # two surfaces cannot drift apart.
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("How to read this shortlist", h2))
+    for note in assurance_notes(cfg):
+        story.append(Paragraph(f"• <b>{note['label']}.</b> {note['body']}", foot))
+        story.append(Spacer(1, 2))
+
+    # --- caveats & vintages -------------------------------------------------
     story.append(Spacer(1, 6))
     story.append(Paragraph("Data vintages &amp; caveats", h2))
-    caveats = [
-        f"<b>Suicide signal:</b> {v['suicide']}. Local-Authority grain only, with a "
-        "~200–270 day registration lag and small-number suppression, so it informs the "
-        "<b>weighting</b> of the proxies, not fine-grained ranking. No small-area suicide "
-        "rate is fabricated; the source is age 10+ and England-only, so weights are "
-        "England-learned and Welsh areas carry a neutral suicide term.",
-        f"<b>Deprivation:</b> {v['deprivation']}. Within-nation percentiles only "
-        "(England scores, Wales ranks — not comparable across the border). It is collinear "
-        "with the occupation proxy; the active univariate scheme weights each proxy by its "
-        "own association with suicide so all three still contribute.",
-        f"<b>Occupation:</b> {v['census']}. Residence-based (where high-risk workers live, "
-        "not where they work) and at SOC major-group resolution — a broad proxy.",
-        "<b>Isolation:</b> male single/separated/divorced (sex-specific) plus the "
-        "one-person-household share (a household measure — Census 2021 has no sex-broken "
-        "living-alone figure at this grain).",
-        f"<b>Population:</b> {v['population']}. <b>Provision:</b> {v['provision']}.",
-        f"<b>Travel time:</b> {travel_note}",
-        "<b>Latent need, not prediction.</b> Area-level only — never read as a statement "
-        "about any individual. Final siting needs local judgement.",
-    ]
-    for c in caveats:
-        story.append(Paragraph("• " + c, foot))
+    for c in data_caveats(cfg):
+        story.append(Paragraph(f"• <b>{c['label']}:</b> {c['body']}", foot))
         story.append(Spacer(1, 2))
 
     # --- build --------------------------------------------------------------

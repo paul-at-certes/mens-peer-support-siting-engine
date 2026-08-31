@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.config import load_config  # noqa: E402
+from src.caveats import assurance_notes, data_caveats  # noqa: E402
 
 st.set_page_config(page_title="Men's Peer-Support Siting Engine", layout="wide")
 
@@ -174,64 +175,73 @@ with right:
 
 # --- Weighting & robustness panel ------------------------------------------
 st.divider()
+
+_assurance = assurance_notes(cfg)
+_stability = next((n for n in _assurance if n["label"] == "Stability check"), None)
+if _stability and _stability["body"].startswith("UNSTABLE"):
+    st.warning(f"**Stability check — {_stability['body']}**")
+
 if sens:
-    with st.expander("Weighting & robustness (how much does the weighting choice matter?)",
+    with st.expander("Weighting & robustness (how much do our choices matter?)",
                      expanded=False):
-        p = sens["perturbation"]
+        for note in _assurance:
+            st.markdown(f"**{note['label']}.** {note['body']}")
+
+        st.markdown("---")
         st.markdown(
-            f"The proxy weights are **learned** at LA level. We test how much the "
-            f"top-{sens['shortlist_n']} shortlist depends on that choice — both across "
-            f"the three weighting schemes and by perturbing the active scheme's "
-            f"coefficients across their 95% confidence intervals ({sens['n_draws']} draws)."
-        )
-        comp = sens["scheme_comparison"]
-        st.dataframe(pd.DataFrame([
-            {"scheme": k + (" (active)" if k == sens["active_scheme"] else ""),
-             "dep/occ/iso": "/".join(f"{comp[k]['weights'][c]:.2f}"
-                                     for c in ("deprivation", "occupation", "isolation")),
-             "top-N overlap vs active": comp[k]["topN_jaccard_vs_active"],
-             "Spearman vs active": comp[k]["spearman_vs_active"]}
-            for k in comp]), hide_index=True, use_container_width=True)
-        st.markdown(
-            f"- **Within the active scheme**, the shortlist is stable: mean top-N "
-            f"overlap **{p['mean_topN_jaccard']:.2f}** under CI perturbation, "
-            f"average retention **{p['mean_retention']:.0%}**, "
-            f"**{p['n_low_confidence']}** area(s) flagged low-confidence.\n"
-            f"- **Across schemes**, the *ordering* is similar (high Spearman) but the "
-            f"precise shortlist can differ — which is why the choice of scheme is a "
-            f"documented, deliberate decision, not a silent default."
+            f"Three things are varied, one at a time, and each is scored against the "
+            f"shipped configuration's top-{sens['shortlist_n']} shortlist. Overlap is "
+            f"Jaccard: 1.00 means the identical shortlist."
         )
 
+        alts = sens.get("alternatives", {})
+        if alts:
+            st.markdown("**1. Alternative weightings**")
+            st.dataframe(pd.DataFrame([
+                {"weighting": k,
+                 "dep/occ/iso": "/".join(f"{alts[k]['weights'][c]:.2f}"
+                                         for c in ("deprivation", "occupation", "isolation")),
+                 "top-N overlap": alts[k]["topN_jaccard_vs_declared"],
+                 "Spearman": alts[k]["spearman_vs_declared"],
+                 "note": ("discards " + ", ".join(alts[k]["discards_evidenced"])
+                          if alts[k].get("discards_evidenced") else "")}
+                for k in alts]), hide_index=True, use_container_width=True)
+            st.caption(
+                "A weighting that discards a proxy the LA fit finds significantly "
+                "associated with suicide is dropping evidence rather than weighing it — "
+                "it is usually the outlier here."
+            )
+
+        env = sens.get("envelope", {})
+        if "mean_topN_jaccard" in env:
+            st.markdown("**2. Weights moving within what the data supports**")
+            st.markdown(
+                f"- Mean top-N overlap **{env['mean_topN_jaccard']:.2f}** over "
+                f"{env['n_draws']} draws from the {env['basis']}.\n"
+                f"- Average retention **{env['mean_retention']:.0%}**; "
+                f"**{env['n_low_confidence']}** area(s) below 50% retention.\n"
+                f"- Median rank shift **{env['median_rank_shift']:.0f}** places "
+                f"(90th percentile {env['p90_rank_shift']:.0f})."
+            )
+
+        sup = sens.get("supply", {})
+        if sup and "skipped" not in sup:
+            st.markdown("**3. Travel-time and catchment constants**")
+            st.dataframe(pd.DataFrame([
+                {"configuration": k + (" (shipped)" if v["is_shipped"] else ""),
+                 "top-N overlap": v["topN_jaccard_vs_shipped"],
+                 "Spearman": v["spearman_vs_shipped"]}
+                for k, v in sorted(sup.items(),
+                                   key=lambda kv: kv[1]["topN_jaccard_vs_shipped"])
+            ]), hide_index=True, use_container_width=True)
+            st.caption(
+                "The supply surface gates the shortlist hard — most of the top 100 sits "
+                "in the bottom decile of supply — so these two hand-set constants get "
+                "the same scrutiny as any weight."
+            )
+
 # --- Caveats / vintages on the face ----------------------------------------
+# Copy comes from src/caveats.py so this and the PDF report cannot drift apart.
 st.divider()
 with st.expander("Data vintages & caveats (read me)", expanded=False):
-    v = cfg["vintages"]
-    st.markdown(
-        f"""
-- **Suicide signal:** {v['suicide']} — Local-Authority grain only; ~200–270 day
-  registration lag and small-number suppression mean it informs **weighting**,
-  not fine-grained ranking. Mapped down to areas as a single low-weighted term;
-  **no small-area suicide rate is fabricated.** Source is **age 10+** (not
-  strictly 16–64) and **England-only**, so the calibration weights are
-  England-learned and Wales carries a neutral suicide term.
-- **Deprivation:** {v['deprivation']} — **within-nation** normalisation only
-  (England publishes scores, Wales ranks — not comparable, so each nation is
-  converted to a within-nation deprivation percentile). Deprivation is
-  **collinear** with the occupation proxy; the active *univariate* scheme weights
-  each proxy by its own association with suicide so all three still contribute
-  (see the weighting & robustness panel above).
-- **Occupation:** {v['census']} — **residence-based** (where high-risk workers
-  *live*, not where they work), and **SOC major-group** resolution (the only
-  occupation×sex cut at LSOA), so it is a broad proxy.
-- **Isolation:** male single/separated/divorced (sex-specific) **plus** the
-  one-person-household share (a *household* measure — Census 2021 has no
-  sex-broken living-alone figure at this grain).
-- **Population:** {v['population']}.  **Provision:** {v['provision']}.
-- **Travel time:** {cfg['accessibility']['provider']} provider. Straight-line
-  distance **over-states** accessibility in rural/estuarine areas until real
-  routing lands.
-- **Latent need, not prediction.** Area-level only — never read as a statement
-  about any individual. Final siting needs local judgement (venue, volunteers,
-  partner appetite).
-"""
-    )
+    st.markdown("\n".join(f"- **{c['label']}:** {c['body']}" for c in data_caveats(cfg)))
