@@ -15,8 +15,43 @@ import json
 from .config import Config
 
 
+# Share of households with no car or van at which the drive time stops describing
+# most of the journeys people would actually make to an evening session. About
+# 23% of households across England and Wales have no car (Census 2021 TS045) and
+# the median neighbourhood sits near 19%, so this bar is set clear of typical
+# rather than a whisker above it. It is a display threshold: nothing in the
+# ranking depends on it.
+HIGH_NO_CAR_SHARE = 0.40
+
+# Appended to every provider's travel note, so the map face and the PDF say the
+# same thing about the car-only assumption whichever routing is in use.
+_NO_CAR_TAIL = """
+    How much that matters varies sharply from one place to the next. About one
+    household in four across England and Wales has no car or van, but between
+    neighbourhoods the share runs from under 5% to nearly 90%, so each area's own
+    figure is shown with its breakdown. Read the drive time as least representative
+    of real journeys where that share is highest."""
+
+
 def _entry(label: str, body: str) -> dict:
     return {"label": label, "body": " ".join(body.split())}
+
+
+def car_access_note(share: float | None) -> str:
+    """One plain sentence about an area's car access, for the per-area breakdown.
+
+    Descriptive only. The share never enters a score (see ingest/car_access.py);
+    it says where the car-only travel time above is least worth trusting.
+    """
+    if share is None or share != share:      # None or NaN
+        return ("No car or van figure for this area, so there is no way to tell how "
+                "well the drive time above describes journeys made here.")
+    line = f"Households with no car or van: {share:.0%}."
+    if share >= HIGH_NO_CAR_SHARE:
+        line += (" That is high. The drive time above overstates how reachable a group "
+                 "is for those households: getting to an evening session without a car "
+                 "is a different journey, and this tool does not measure it.")
+    return line
 
 
 def travel_note(cfg: Config) -> str:
@@ -26,17 +61,18 @@ def travel_note(cfg: Config) -> str:
         return ("real road driving times on the GB road network, from a routing "
                 "engine we host ourselves. Car only. Public transport is not "
                 "modelled, which matters here: sessions run in the evening, and men "
-                "without cars in deprived areas face a journey this does not show.")
+                "without cars in deprived areas face a journey this does not show."
+                + _NO_CAR_TAIL)
     if provider == "ors":
         return ("OpenRouteService driving times. Car only. Public transport is not "
-                "yet modelled.")
+                "yet modelled." + _NO_CAR_TAIL)
     return (f"the {provider} provider, which uses straight-line distance at a "
             f"constant assumed speed. Measured against real road routing on this "
             f"data it errs in both directions. It understates typical journeys, "
             f"putting the nearest group 10.2 minutes away against 13.8 by road, and "
             f"overstates the worst ones, because a flat speed ignores motorways: 41.4 "
             f"minutes at the 90th percentile against 35.1. Car only, and public "
-            f"transport is not modelled.")
+            f"transport is not modelled." + _NO_CAR_TAIL)
 
 
 def data_caveats(cfg: Config) -> list[dict]:

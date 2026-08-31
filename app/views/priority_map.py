@@ -17,7 +17,7 @@ import pydeck as pdk
 import streamlit as st
 
 from src.config import load_config
-from src.caveats import assurance_notes, data_caveats
+from src.caveats import assurance_notes, car_access_note, data_caveats
 
 cfg = load_config()
 
@@ -337,6 +337,10 @@ with detail_col:
         )
         st.caption(f"Nearest group {row['travel_minutes']:.0f} minutes away. "
                    f"Groups within the catchment: {row['groups_within_catchment']}.")
+        # Context, not a score. The travel time above is a DRIVE time, so it
+        # describes fewer of this area's households the lower car ownership is.
+        # Copy comes from src/caveats.py, shared with the PDF.
+        st.caption(car_access_note(row.get("no_car_share")))
         if pick in robustness:
             ret = robustness[pick]
             tag = "robust" if ret >= 0.8 else ("moderate" if ret >= 0.5 else "low confidence")

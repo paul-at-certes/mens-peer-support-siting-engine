@@ -130,6 +130,7 @@ caveats. In brief:
 | Isolation | Nomis Census 2021 RM074 (marital) + TS003 (one-person households) |
 | Deprivation | IMD 2019 (England scores) + WIMD 2019 (Wales ranks), LSOA 2011→2021 |
 | Suicide signal | Nomis NM_161_1 / ONS registrations (male, all ages, X60-X84 + Y10-Y34, 5-yr pooled, England & Wales) |
+| Car access (context only) | Nomis Census 2021 TS045 — households with no car or van |
 | Provision | Andy's Man Club group finder (live harvest) |
 
 Key real-data honesty notes (also surfaced on the map face):
@@ -140,6 +141,14 @@ Key real-data honesty notes (also surfaced on the map face):
   working-age measures, so the outcome is broader than the population targeted.
 - **Occupation is SOC major-group, residence-based**; **living-alone** is a
   one-person-household share (no sex-broken figure exists at LSOA).
+- **Travel time is car-only.** Public transport is not modelled, and that bites
+  hardest exactly where this tool points: about one household in four in England
+  and Wales has no car or van, rising above 50% in some of the shortlisted areas.
+  So `ingest/car_access.py` carries the per-area no-car share as **context**
+  (Census 2021 TS045) and the map and PDF flag where the drive time overstates
+  access. It changes no score — it says where the supply surface is least
+  trustworthy, and it is the natural weight for blending car and public-transport
+  access when that lands.
 - **Travel time defaults to the haversine stub** (straight-line over-states rural
   access). Real road routing via **self-hosted OSRM** is implemented and ready —
   see below.
@@ -261,7 +270,8 @@ src/
   fetch.py               # cached HTTP + ArcGIS / Nomis paginators (real mode)
   io_utils.py            # loud failures + schema validation
   geography.py           # spine: dim_geography + dim_population
-  ingest/                # deprivation, occupation, isolation, suicide_la, provision
+  ingest/                # deprivation, occupation, isolation, car_access,
+                         #   suicide_la, provision
                          #   + scotland_ni_stubs.py (documented stubs)
   travel_time.py         # TravelTimeProvider: haversine stub + OSRM/ORS stubs
   accessibility.py       # fact_accessibility (supply surface)
@@ -283,7 +293,8 @@ tests/
 raw (downloaded / synthetic)
   → geography.py        → dim_geography, dim_population
   → ingest/*            → fact_deprivation, fact_occupation, fact_isolation,
-                          fact_suicide_la, dim_provision
+                          fact_car_access (context only), fact_suicide_la,
+                          dim_provision
   → calibrate.py        → weights.json   (LA-level veto; non-blocking)
   → accessibility.py    → fact_accessibility   (TravelTimeProvider)
   → score.py            → fact_score.parquet + .geojson   (need × (1 − supply))

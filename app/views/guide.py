@@ -33,6 +33,12 @@ def _facts() -> dict:
     except Exception:
         pass
     try:
+        car = pd.read_parquet(cfg.path("interim") / "fact_car_access.parquet")
+        f["no_car_national"] = float(car["no_car_households"].sum() / car["households"].sum())
+        f["no_car_max"] = float(car["no_car_share"].max())
+    except Exception:
+        pass
+    try:
         f["sens"] = json.loads(cfg.path("sensitivity").read_text())
     except Exception:
         f["sens"] = {}
@@ -464,11 +470,25 @@ st.caption(
 # ---------------------------------------------------------------------------
 st.header("10. What this tool cannot tell you")
 
+_no_car = F.get("no_car_national")
+_no_car_line = (
+    f"Around {_no_car:.0%} of households in England and Wales have no car or van, "
+    f"rising to {F.get('no_car_max', 0):.0%} in the neighbourhood where it is highest, "
+    "so the tool now shows that share alongside each area's travel time to mark where "
+    "the drive time flatters access most. It still does not measure the journey those "
+    "households would actually make."
+    if isinstance(_no_car, float) else
+    "The tool shows each area's share of households with no car or van alongside its "
+    "travel time, to mark where the drive time flatters access most, but it does not "
+    "measure the journey those households would actually make."
+)
+
 st.markdown(
-    """
+    f"""
     - It only knows about driving. Public transport is not included, which is a
       real gap: the men most likely to need a free peer-support group are among
       the least likely to own a car, and groups often meet in the evening.
+      {_no_car_line}
     - The data is a few years old. The Census was 2021 and the deprivation figures
       2019. Neighbourhoods change.
     - Suicide figures arrive slowly, typically six to nine months after a death,
