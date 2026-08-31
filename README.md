@@ -47,6 +47,14 @@ pip install -e .   # or: pip install numpy pandas pyarrow statsmodels pyyaml req
 #    Wales (~35k LSOAs; first run pulls from ONS/Nomis/AMC, a few
 #    minutes; subsequent runs use the cache). Set mode: synthetic in config.yaml
 #    to run the instant offline fixture instead.
+#
+#    ON A FRESH CLONE, pick one of these first. accessibility.provider is
+#    `osrm`, and the prepared routing graph in osrm-data/ is NOT in the repo
+#    (8GB+, rebuildable from an OSM extract) — so an untouched clone stops and
+#    asks you to start a routing server that has no graph to serve:
+#      config.yaml -> accessibility.provider: haversine   # no server, runs now
+#      config.yaml -> mode: synthetic                     # instant, fully offline
+#      or build the graph and start OSRM — see "Real routing" below
 python -m src.pipeline
 #    -> data/output/fact_score.parquet, fact_score.geojson, weights.json
 #    -> prints the declared weights, the LA-level veto verdict, and a
