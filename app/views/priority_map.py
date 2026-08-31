@@ -2,9 +2,15 @@
 
 Reached from app/streamlit_app.py; run that, not this file.
 
-Shows the priority surface, a toggle between the per-capita and reach views, an
-existing-group overlay, and a per-area factor breakdown. Data vintages and the
-key caveats are surfaced on the map face per the design's honesty guardrails.
+Shows the priority surface, a toggle between three views, an existing-group
+overlay, and a per-area factor breakdown. Data vintages and the key caveats are
+surfaced on the map face per the design's honesty guardrails.
+
+The third view — remoteness — re-ranks the remote classes against each other on
+the SAME priority_score the other two views use. It re-ranks a subset; it
+re-scores nothing. Remoteness and the occupational blind-spot flag are read off
+fact_score.parquet as descriptive columns; neither can reach a score (see
+src/ingest/remoteness.py, src/blindspot.py and how score.py attaches them).
 """
 
 from __future__ import annotations
@@ -17,7 +23,8 @@ import pydeck as pdk
 import streamlit as st
 
 from src.config import load_config
-from src.caveats import assurance_notes, car_access_note, data_caveats
+from src.caveats import (assurance_notes, blind_spot_note, car_access_note,
+                         data_caveats, remoteness_note)
 
 cfg = load_config()
 
@@ -97,36 +104,78 @@ st.page_link("views/guide.py", icon=":material/menu_book:",
                    "data comes from and how the tiers work.")
 
 # --- Sidebar: view + filters ------------------------------------------------
+VIEW_PER_CAPITA = "Per-capita (acute pockets)"
+VIEW_REACH = "Reach (most men reached)"
+VIEW_REMOTE = "Remoteness (remote areas, ranked among themselves)"
+
+# The remoteness view only appears once RUC21 has been ingested. Its absence is
+# a missing descriptive input, not a broken run, so the app degrades to the two
+# original views rather than erroring.
+_has_remote = "is_remote" in df.columns and df["is_remote"].notna().any()
+_view_options = [VIEW_PER_CAPITA, VIEW_REACH] + ([VIEW_REMOTE] if _has_remote else [])
 view = st.sidebar.radio(
-    "View",
-    ["Per-capita (acute pockets)", "Reach (most men reached)"],
-    help="Per-capita ranks priority_score. Reach ranks priority_score × "
-         "male working-age population.",
+    "View", _view_options,
+    help="Per-capita ranks priority_score. Reach ranks priority_score × male "
+         "working-age population. Remoteness ranks the areas further from a major "
+         "town or city against each other, on the same per-capita score — it "
+         "re-ranks a subset and re-scores nothing.",
 )
-score_col = "priority_score" if view.startswith("Per-capita") else "reach_score"
+is_remote_view = view == VIEW_REMOTE
+score_col = "reach_score" if view == VIEW_REACH else "priority_score"
 # Tiers are computed per view: a tier derived from per-capita ranks says nothing
 # about the reach ranking, which multiplies by population. Select the matching
 # set so the table can never label a reach row with a per-capita tier.
-_tier_prefix = "" if score_col == "priority_score" else "reach_"
+_tier_prefix = "reach_" if view == VIEW_REACH else ""
 if f"{_tier_prefix}tier" in df.columns:
     for col in ("tier", "rank_best", "rank_worst"):
         df[col] = df[f"{_tier_prefix}{col}"]
     df["tier_label"] = df["tier"].map(TIER_LABEL).fillna("③ Outside")
-rank_col = "rank" if view.startswith("Per-capita") else "rank_reach"
 
 nations = sorted(df["nation"].unique())
 chosen = st.sidebar.multiselect("Nation", nations, default=nations)
 show_groups = st.sidebar.checkbox("Show existing groups", value=True)
+_has_flag = "occupation_blind_spot" in df.columns
+mark_flag = (st.sidebar.checkbox("Mark occupational blind spots", value=True,
+                                 help="Areas whose mix of jobs carries at least the "
+                                      "national-average male suicide risk while this "
+                                      "index still scores them below average need.")
+             if _has_flag else False)
 top_n = st.sidebar.slider("Table: top N", 5, min(100, len(df)), 20)
 
 view_df = df[df["nation"].isin(chosen)].copy()
+
+# The remoteness view is a SUBSET, re-ranked. Nothing is rescored: rank_remote is
+# a position within this subset on the same priority_score the per-capita view
+# uses, and every other figure on the page is untouched.
+if is_remote_view:
+    view_df = view_df[view_df["is_remote"].fillna(False).astype(bool)].copy()
+    # The remote classes are not one thing. Remote URBAN areas carry the highest
+    # deprivation of any class, so they already win the national ranking and fill
+    # the top of this view; the smaller rural classes it exists for sit far lower.
+    # Without this filter a reader would conclude the view surfaces nothing new.
+    _classes = sorted(view_df["ruc21_label"].dropna().unique())
+    _picked = st.sidebar.multiselect(
+        "Remote classes", _classes, default=_classes,
+        help="Remote urban areas already rank highly nationally. Deselect them to "
+             "see the smaller rural areas this view was built for.")
+    view_df = view_df[view_df["ruc21_label"].isin(_picked)].copy()
+    view_df["rank_remote"] = (view_df["priority_score"]
+                              .rank(ascending=False, method="min").astype(int))
+rank_col = ("rank_remote" if is_remote_view
+            else ("rank_reach" if view == VIEW_REACH else "rank"))
+
+# Every filter above can empty the frame — no nation selected, or every remote
+# class deselected. Stop here rather than let a NaN centroid reach the map.
+if not len(view_df):
+    st.info("No areas match the current filters. Re-select a nation, or a remote class.")
+    st.stop()
 
 # --- Which areas go on the map ---------------------------------------------
 # All 35k small areas at once is slow to render and unreadable: the decision-
 # relevant areas are a few hundred, and plotting the rest buries them. Tier is
 # the natural filter because it is already the honest statement of what the
 # evidence separates (see sensitivity.py).
-if "tier" in view_df.columns:
+if "tier" in view_df.columns and not is_remote_view:
     n_short = int((view_df["tier"] == "shortlist").sum())
     n_cont = int((view_df["tier"] == "contention").sum())
     TIER_SCOPES = {
@@ -143,11 +192,15 @@ if "tier" in view_df.columns:
     )
     map_df_filter = view_df["tier"].isin(TIER_SCOPES[scope_label])
     scope_note = scope_label
+elif len(view_df) <= 50:
+    map_df_filter = pd.Series(True, index=view_df.index)
+    scope_note = "all matching areas"
 else:
     cap = st.sidebar.slider("Map: areas shown (top N by score)", 50,
                             min(5000, len(view_df)), min(500, len(view_df)), step=50)
     map_df_filter = view_df[score_col].rank(ascending=False, method="min") <= cap
-    scope_note = f"top {cap:,} by score (run the pipeline for tier filtering)"
+    scope_note = (f"top {cap:,} of the {len(view_df):,} remote areas" if is_remote_view
+                  else f"top {cap:,} by score (run the pipeline for tier filtering)")
 
 # Normalise the active score to 0..1 for colour scaling. Computed on ALL areas in
 # the chosen nation(s), never on the map subset — otherwise filtering to the top
@@ -172,6 +225,12 @@ view_df["_tip_body"] = (
     + "\nneed: " + view_df["need_index"].map("{:.2f}".format)
     + "   supply: " + view_df["supply_index"].map("{:.2f}".format)
 )
+if _has_flag:
+    view_df["_tip_body"] += view_df["occupation_blind_spot"].map(
+        {True: "\n⚑ occupational blind spot", False: ""}).fillna("")
+if is_remote_view:
+    view_df["_tip_body"] += ("\n" + view_df["ruc21_label"].astype(str)
+                             + " — national rank " + view_df["rank"].map("{:,}".format))
 map_df = view_df[map_df_filter]
 
 # --- Shortlist selection ----------------------------------------------------
@@ -179,7 +238,6 @@ map_df = view_df[map_df_filter]
 # map. Its selection is read out of session state here instead: selecting a row
 # triggers a rerun, and on that rerun the state is set before the map is built.
 ranked = view_df.sort_values(score_col, ascending=False).head(top_n)
-rank_col = "rank" if score_col == "priority_score" else "rank_reach"
 
 SHORTLIST_KEY = "shortlist_table"
 _sel = st.session_state.get(SHORTLIST_KEY) or {}
@@ -215,6 +273,26 @@ if show_groups and len(groups):
         get_radius=2200,
         pickable=True,
     ))
+# Blind-spot markers. Drawn UNDER the selection ring and over the area fills: a
+# hollow outline, so the area's own priority colour still reads through. The flag
+# is descriptive — it marks where the need index is blind, and changes no colour,
+# size or position on this map.
+if mark_flag:
+    flagged = map_df[map_df["occupation_blind_spot"].fillna(False).astype(bool)]
+    if len(flagged):
+        layers.append(pdk.Layer(
+            "ScatterplotLayer",
+            data=flagged,
+            get_position="[centroid_lon, centroid_lat]",
+            stroked=True,
+            filled=False,
+            get_line_color=[17, 94, 89, 235],
+            line_width_min_pixels=2,
+            get_radius="_radius",
+            radius_min_pixels=5,
+            pickable=False,
+        ))
+
 selected_row = (view_df[view_df["area_code"] == selected_code]
                 if selected_code is not None else view_df.iloc[0:0])
 if len(selected_row):
@@ -254,12 +332,25 @@ if selected_code is not None:
     _sel_note = (f" Ringed in yellow: {selected_code}, "
                  f"{area_names.get(selected_code, '')}, selected in the "
                  f"shortlist{_hidden}.")
+_scale_note = ("scaled against the remote areas in the chosen nation or nations, "
+               "which is the set this view ranks"
+               if is_remote_view else
+               "scaled against all areas in the chosen nation or nations")
+_flag_note = ""
+if mark_flag:
+    _n_flag = int(map_df["occupation_blind_spot"].fillna(False).sum())
+    _flag_note = (f" Teal rings mark the {_n_flag:,} occupational blind spot(s) shown "
+                  f"here: high-risk work that this ranking scores as below-average "
+                  f"need. The ring is a note about the ranking, not a recommendation.")
 st.caption(
     f"Showing {len(map_df):,} of {len(view_df):,} areas ({scope_note}). "
-    "Red marks priority, darker and larger meaning higher, scaled against all "
-    "areas in the chosen nation or nations. Blue marks existing groups. Hover "
-    f"over either for figures.{_sel_note}"
+    f"Red marks priority, darker and larger meaning higher, {_scale_note}. "
+    f"Blue marks existing groups. Hover over either for figures."
+    f"{_flag_note}{_sel_note}"
 )
+if is_remote_view:
+    _remote_pop = float(view_df["male_working_age_pop"].median()) if len(view_df) else None
+    st.info(remoteness_note(cfg, _remote_pop))
 if not len(map_df):
     st.info("No areas match this scope. Widen the nation or map filter.")
 
@@ -270,21 +361,40 @@ table_col, detail_col = st.columns([3, 2])
 with table_col:
     st.subheader(f"Top {top_n} shortlist")
     tbl_cols = [rank_col, "area_code", "area_name", "nation"]
+    if is_remote_view:
+        # The national position is the point of the view: it says how far outside
+        # the main ranking the best remote areas actually sit.
+        tbl_cols += ["ruc21_label", "rank"]
     if "tier" in ranked.columns:
         tbl_cols.append("tier_label")
+    if _has_flag:
+        tbl_cols.append("occupation_blind_spot")
     tbl_cols += ["need_index", "supply_index", score_col]
     st.dataframe(
         ranked[tbl_cols].rename(columns={score_col: "score", "tier_label": "tier",
-                                         "area_name": "area"}),
+                                         "area_name": "area", "rank": "national rank",
+                                         "ruc21_label": "class",
+                                         "occupation_blind_spot": "blind spot",
+                                         "rank_remote": "rank (remote)"}),
         hide_index=True, use_container_width=True,
         key=SHORTLIST_KEY, on_select="rerun", selection_mode="single-row",
         column_config={
             "need_index": st.column_config.NumberColumn("need", format="%.2f"),
             "supply_index": st.column_config.NumberColumn("supply", format="%.2f"),
             "score": st.column_config.NumberColumn(format="%.2f"),
+            "blind spot": st.column_config.CheckboxColumn(
+                "blind spot", help="High-risk work, below-average need index."),
         },
     )
     st.caption("Select a row to ring that area on the map and load its breakdown.")
+    if is_remote_view:
+        st.caption(
+            f"Ranked among the {len(view_df):,} remote areas only, on the same "
+            f"per-capita score the main list uses. The national rank beside it is "
+            f"where the area sits on that main list — the gap between the two "
+            f"columns is what this view exists to show. Tiers are national, so most "
+            f"remote areas sit outside them."
+        )
     if "tier" in ranked.columns:
         _view_word = "per-capita" if score_col == "priority_score" else "reach"
         st.caption(
@@ -335,12 +445,31 @@ with detail_col:
                 "contribution": st.column_config.NumberColumn(format="%.2f"),
             },
         )
+        # Which occupations drive the occupation factor. Descriptive: it explains
+        # a score already settled, and never contributes to one.
+        top = fb["components"].get("occupation", {}).get("top_groups")
+        if top:
+            named = ", ".join(f"{g['label'].lower()} (rate {g['smr']:.0f}"
+                              f"{' — no different from average' if g['smr'] == 100 else ''})"
+                              for g in top)
+            st.caption(f"Occupation here is driven by: {named}. "
+                       f"A rate of 100 is the average for working-age men; "
+                       f"292 is the highest of the twenty-six groups.")
         st.caption(f"Nearest group {row['travel_minutes']:.0f} minutes away. "
                    f"Groups within the catchment: {row['groups_within_catchment']}.")
         # Context, not a score. The travel time above is a DRIVE time, so it
         # describes fewer of this area's households the lower car ownership is.
         # Copy comes from src/caveats.py, shared with the PDF.
         st.caption(car_access_note(row.get("no_car_share")))
+        # Descriptive context, both of them. Remoteness decides which areas the
+        # remoteness VIEW re-ranks; the flag names where the need index above is
+        # structurally blind. Neither has touched any number on this panel.
+        if pd.notna(row.get("ruc21_label")):
+            st.caption(f"Rural-urban class: {row['ruc21_label']}"
+                       + (" — one of the remote classes this view ranks."
+                          if bool(row.get("is_remote")) else "."))
+        if _has_flag:
+            st.caption(blind_spot_note(cfg, bool(row["occupation_blind_spot"])))
         if pick in robustness:
             ret = robustness[pick]
             tag = "robust" if ret >= 0.8 else ("moderate" if ret >= 0.5 else "low confidence")

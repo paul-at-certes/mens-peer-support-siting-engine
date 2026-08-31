@@ -12,6 +12,12 @@ The report features the REACH view by default (``report.view``): areas ranked by
 ``priority_score × male working-age population`` — "the most men reached per new
 group" — which is the lens for a national where-to-open-next decision.
 
+A closing section carries the two things that ranking cannot see: the remoteness
+view (the remote classes ranked among themselves, on the same per-capita score)
+and the occupational blind-spot flag. Both are re-presentations of columns
+already in fact_score.parquet; neither runs any analysis and neither can reach a
+score. Copy is shared with the map face through src/caveats.py.
+
 reportlab is pure-Python and optional; install it with::
 
     pip install -e ".[report]"
@@ -24,7 +30,8 @@ import sys
 
 import pandas as pd
 
-from .caveats import assurance_notes, data_caveats
+from .caveats import (assurance_notes, blind_spot_definition, blind_spot_note,
+                       data_caveats, remoteness_note)
 from .config import Config, load_config
 
 # Human-readable factor names (match the design note / app language).
@@ -125,7 +132,16 @@ def build_reasoning(row: pd.Series, fb: dict, catchment_minutes: int) -> str:
     pop = int(round(float(row["male_working_age_pop"])))
     reach = f" A new group here would be within reach of ~{pop:,} working-age men."
 
-    return driver + sig_clause + supply + reach
+    # The occupational blind spot, if this area carries it. Rare in the reach
+    # view (the flag requires a below-average need index, and reach leaders sit
+    # well above it) but stated wherever it is true.
+    flag_clause = ""
+    if bool(row.get("occupation_blind_spot", False)):
+        flag_clause = (" Marked as an <b>occupational blind spot</b>: the work done here "
+                       "carries at least the national-average male suicide risk, and this "
+                       "ranking still scores the area below average need.")
+
+    return driver + sig_clause + supply + reach + flag_clause
 
 
 def _tier_cell(area_code: str, tiers, labels: dict, fallback: str,
@@ -322,6 +338,14 @@ def run(cfg: Config) -> "Path":  # type: ignore[name-defined]
         ]
         story.append(KeepTogether(block))
 
+    # --- what this ranking cannot see --------------------------------------
+    # Two re-presentations of columns already in fact_score.parquet. No new
+    # analysis: the remoteness view re-ranks a subset on the same per-capita
+    # score, and the flag is a test applied to a finished need_index.
+    _remote_and_blind_spot(cfg, df, story, top_n, h2, foot, reason_num, reason,
+                           cell, cell_b, NAVY, colors, mm, Paragraph, Spacer,
+                           Table, TableStyle)
+
     # --- how the weights were set, and did the checks pass? -----------------
     # Copy comes from src/caveats.py, shared with the Streamlit map face so the
     # two surfaces cannot drift apart.
@@ -348,6 +372,144 @@ def run(cfg: Config) -> "Path":  # type: ignore[name-defined]
     )
     doc.build(story)
     return out_path
+
+
+def _remote_and_blind_spot(cfg, df, story, top_n, h2, foot, reason_num, reason,
+                           cell, cell_b, NAVY, colors, mm, Paragraph, Spacer,
+                           Table, TableStyle) -> None:
+    """The remoteness view and the blind-spot flag, as a closing PDF section.
+
+    Both exist because the main ranking structurally cannot surface these areas
+    — see rural-lens-spec.md. Both are descriptive: this function reads columns
+    and prints them, and computes no score of any kind.
+    """
+    has_remote = "is_remote" in df.columns and df["is_remote"].notna().any()
+    bs_path = cfg.path("blind_spot")
+    bs = json.loads(bs_path.read_text()) if bs_path.exists() else {}
+    if not has_remote and not bs:
+        return
+
+    story.append(Spacer(1, 10))
+    story.append(Paragraph("What this ranking cannot see", h2))
+
+    if has_remote:
+        remote = df[df["is_remote"].fillna(False).astype(bool)]
+        median_pop = float(remote["male_working_age_pop"].median()) if len(remote) else None
+        story.append(Paragraph(f"<b>Remote areas, ranked among themselves.</b> "
+                               f"{remoteness_note(cfg, median_pop)}", reason))
+        story.append(Spacer(1, 5))
+
+        top_remote = remote.sort_values("priority_score", ascending=False).head(top_n)
+        header = ["#", "Area (LSOA)", "Local authority", "Rural-urban class",
+                  "Male<br/>16–64", "Priority<br/>score", "Nearest<br/>group",
+                  "National<br/>rank"]
+        data = [[Paragraph(f"<b>{h}</b>", cell) for h in header]]
+        for i, (_, r) in enumerate(top_remote.iterrows(), 1):
+            data.append([
+                Paragraph(str(i), cell_b),
+                Paragraph(f"{r['area_name']}<br/><font size=6 color='#777777'>"
+                          f"{r['area_code']}</font>", cell),
+                Paragraph(str(r["la_name"]), cell),
+                Paragraph(str(r.get("ruc21_label", "")), cell),
+                Paragraph(f"{int(r['male_working_age_pop']):,}", cell),
+                Paragraph(f"{r['priority_score']:.3f}", cell),
+                Paragraph(f"{int(round(float(r['travel_minutes'])))} min", cell),
+                Paragraph(f"{int(r['rank']):,}", cell),
+            ])
+        tbl = Table(data, colWidths=[8*mm, 45*mm, 34*mm, 38*mm, 16*mm, 17*mm, 16*mm,
+                                     20*mm], repeatRows=1)
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+             [colors.white, colors.HexColor("#f2f4f8")]),
+            ("LINEBELOW", (0, 0), (-1, 0), 0.8, NAVY),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(tbl)
+        story.append(Spacer(1, 3))
+        story.append(Paragraph(
+            f"Ranked among the {len(remote):,} remote areas only, on the same "
+            f"per-capita score used elsewhere in this document. The national rank in "
+            f"the last column is where the area sits on the full list of "
+            f"{len(df):,} — the gap between the two is the point of the table.", foot))
+        story.append(Spacer(1, 6))
+
+        # The top of that table is dominated by remote URBAN areas, which the
+        # main list already surfaces. Without this breakdown a reader would
+        # conclude the view adds nothing; it is the smaller rural classes lower
+        # down that the main ranking cannot reach.
+        by_class = (remote.groupby("ruc21_label")
+                    .agg(n=("area_code", "size"), best=("rank", "min"),
+                         median=("rank", "median"),
+                         flagged=("occupation_blind_spot", "sum"))
+                    .sort_values("median"))
+        cdata = [[Paragraph(f"<b>{h}</b>", cell) for h in
+                  ["Rural-urban class", "Areas", "Best national rank",
+                   "Median national rank", "Blind spots"]]]
+        for label, r in by_class.iterrows():
+            cdata.append([
+                Paragraph(str(label), cell),
+                Paragraph(f"{int(r['n']):,}", cell),
+                Paragraph(f"{int(r['best']):,}", cell),
+                Paragraph(f"{int(r['median']):,}", cell),
+                Paragraph(f"{int(r['flagged']):,}", cell),
+            ])
+        ctbl = Table(cdata, colWidths=[45*mm, 20*mm, 32*mm, 34*mm, 22*mm], repeatRows=1)
+        ctbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+             [colors.white, colors.HexColor("#f2f4f8")]),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(ctbl)
+        story.append(Spacer(1, 3))
+        story.append(Paragraph(
+            "Read the table above with this one. The remote classes are not one "
+            "thing: remote <i>urban</i> areas carry the highest poverty of any class "
+            "and the main ranking already surfaces them, which is why they fill the "
+            "top of the list. The smaller rural classes sit far lower and carry "
+            "almost all of the occupational blind spots — they are the reason this "
+            "view exists, and they are further down the same table.", foot))
+        story.append(Spacer(1, 8))
+
+    if bs and bs.get("n_flagged"):
+        rank, prof = bs.get("ranking", {}), bs.get("profile", {})
+        councils = ", ".join(f"{c['la_name']} ({c['n']})"
+                             for c in bs.get("top_councils", [])[:8])
+        nations = ", ".join(f"{NATION_NAME.get(k, k)} {v}"
+                            for k, v in (bs.get("by_nation") or {}).items())
+        story.append(Paragraph(
+            f"<b>The occupational blind spot.</b> {blind_spot_definition(cfg)}", reason))
+        story.append(Spacer(1, 3))
+        story.append(Paragraph(
+            f"<b>{bs['n_flagged']:,}</b> of {bs['n_areas']:,} areas "
+            f"({bs['share_flagged']:.1%}) meet that test. They rank at a median of "
+            f"{rank.get('median_rank', 0):,}, the best of them "
+            f"{rank.get('best_rank', 0):,}, and <b>none</b> reaches the top 100 under "
+            f"any configuration tested — which is the whole reason for naming them "
+            f"separately. The nearest group is a median of "
+            f"{prof.get('median_travel_minutes', 0):.0f} minutes away, and they sit at "
+            f"{prof.get('median_supply_index', 0):.2f} on the supply index against "
+            f"{prof.get('all_areas_median_supply_index', 0):.2f} for all areas, so most "
+            f"of them are genuinely thinly served as well as unseen. "
+            f"By nation: {nations}. Most affected councils: {councils}.", reason))
+        story.append(Spacer(1, 3))
+        story.append(Paragraph(
+            f"<b>Where the threshold came from.</b> {bs['threshold']['statement']} The "
+            f"flag is derived from a finished score and never enters one: it cannot "
+            f"move an area up or down this list.", foot))
+    elif bs:
+        story.append(Paragraph(
+            "<b>The occupational blind spot.</b> Every area is tested for it, and on "
+            "this run no area met the test.", reason))
 
 
 def main() -> None:

@@ -25,7 +25,9 @@ file X here" message if a (non-automatable) source is ever missing.
 | LSOA21 → LAD → Region lookup | `geography.py` | ONS Open Geography Portal `LSOA21_BUA22_LAD22_RGN22_EW_LU_v2` (ArcGIS REST) | LSOA 2021 | 35,672 LSOAs; LAD/RGN 2022 boundaries |
 | LSOA21 pop-weighted centroids | `geography.py` | ONS Geo Portal `LSOA_PopCentroids_EW_2021_V4` | LSOA 2021 | lon/lat via `outSR=4326` |
 | Population by sex & age | `geography.py` | Nomis `NM_2221_1` (Census 2021 RM121) | LSOA 2021 | male 16–64 summed from age bands 7–17 |
-| Occupation by sex | `ingest/occupation.py` | Nomis `NM_2207_1` (Census 2021 RM107) | LSOA 2021 | **SOC major groups** 5/8/9 only (sub-major not sex-crossed at LSOA); **residence-based** |
+| Occupation by sex, major groups | `ingest/occupation.py` | Nomis `NM_2207_1` (Census 2021 RM107) | LSOA 2021 | male shares across all 9 SOC-2020 major groups; **residence-based** |
+| Occupation by sex, sub-major groups | `ingest/occupation.py` | ONS custom dataset API, `occupation_current_27a` × `sex` | **MSOA** 2021 | the within-major mix. Sub-major × sex is **68% disclosure-blocked at LSOA**, so it is taken at MSOA and applied to the LSOA major shares |
+| Male suicide SMRs by occupation | `ingest/occupation.py` | ONS *Suicide by occupation: England, main data tables*, Table 3 (`.xls`) | SOC 2010 sub-major | the weights. England only, deaths registered **2011–2015**, ages 20–64; the 2016–2020 update was cancelled |
 | Marital status by sex | `ingest/isolation.py` | Nomis `NM_2174_1` (Census 2021 RM074) | LSOA 2021 | male single/separated/divorced ÷ male 16+ |
 | Household composition | `ingest/isolation.py` | Nomis `NM_2023_1` (Census 2021 TS003) | LSOA 2021 | one-person-household share (**not** sex-broken) |
 | IMD 2019 (England) | `ingest/deprivation.py` | gov.uk File 7 (scores CSV) | LSOA **2011** | income + employment **scores** |
@@ -33,6 +35,7 @@ file X here" message if a (non-automatable) source is ever missing.
 | LSOA 2011 → 2021 crosswalk | `ingest/deprivation.py` | ONS Geo Portal `LSOA11_LSOA21_LAD22_EW_LU_v5` | — | brings IMD/WIMD (2011) onto 2021; split=copy, merge=average |
 | Suicide by LA | `ingest/suicide_la.py` | Nomis API `NM_161_1` (ONS registrations), geography `TYPE434` | LA × cause × sex × age × year | **male, all ages, X60-X84 + Y10-Y34, 5-yr pooled, England & Wales**; denominator is `male_pop` from the population spine |
 | Car or van availability | `ingest/car_access.py` | Nomis `NM_2063_1` (Census 2021 TS045) | LSOA 2021 | no-car **households** ÷ all households; **descriptive context only — never enters a score** |
+| Rural-Urban Classification 2021 | `ingest/remoteness.py` | ONS Geo Portal `LSOA21_RUC21_EW_LU` (ArcGIS REST) | LSOA 2021 | settlement size × distance to a major town or city; the `*F1` codes are "remote". **Descriptive context only — never enters a score**; it decides which areas the remoteness *view* re-ranks |
 | AMC group locations | `ingest/provision.py` | Andy's Man Club WP Store Locator (`admin-ajax.php`) | point | grid-harvested + deduped (~360 groups); **run by hand, throttled** — see above |
 
 ## Manual / not-yet-automated sources

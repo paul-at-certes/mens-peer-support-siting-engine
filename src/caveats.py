@@ -33,8 +33,32 @@ _NO_CAR_TAIL = """
     of real journeys where that share is highest."""
 
 
+def _diagnostic_path(cfg: Config, key: str):
+    """Resolve an OPTIONAL diagnostic path, or None if this config has no such key.
+
+    Every diagnostic these notes read is optional and its absence is itself
+    reported, so a config written before one of them existed must degrade the
+    copy rather than take down the map that renders it.
+    """
+    try:
+        return cfg.path(key)
+    except KeyError:
+        return None
+
+
 def _entry(label: str, body: str) -> dict:
-    return {"label": label, "body": " ".join(body.split())}
+    return {"label": label, "body": _words(body)}
+
+
+def _ordinal(n: int) -> str:
+    """1 -> '1st', 11 -> '11th', 5203 -> '5,203rd'. Ranks read as ranks."""
+    suffix = "th" if 11 <= (n % 100) <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n:,}{suffix}"
+
+
+def _words(body: str) -> str:
+    """Collapse an indented triple-quoted block into one clean paragraph."""
+    return " ".join(body.split())
 
 
 def car_access_note(share: float | None) -> str:
@@ -99,6 +123,133 @@ def public_transport_note(cfg: Config) -> str:
     """.split())
 
 
+def outvoted_note(cfg: Config) -> str:
+    """What the ranking structurally cannot show, and what we do about it.
+
+    Deprivation (0.40) and isolation (0.25) together outweigh occupation (0.35)
+    close to two to one, and areas that score high on occupation alone tend to
+    score low on both. So an area can carry the highest occupational risk in the
+    country and still rank nowhere. That is a consequence of the declared
+    weights, not a fault in the data, but a reader cannot infer it from the map,
+    so it is stated here.
+
+    This note USED TO END "this list will not surface them", which was true when
+    it was written and stopped being true the moment the blind-spot flag shipped.
+    It is rewritten rather than appended to, and it is now conditional on the
+    flag having actually run: with no blind_spot.json the old ending is the
+    honest one again. Figures come from occupation_diagnostic.json and
+    blind_spot.json when they exist; the opening claim depends on neither.
+    """
+    base = _words("""
+        The ranking is driven mainly by poverty and by men living alone. Those two
+        together outweigh the jobs factor by roughly two to one, and places that
+        score high on jobs alone tend to score low on both of the others. So an area
+        where men do the most dangerous work, but which is not poor, will not appear
+        near the top of this list however risky that work is.""")
+
+    diag = _diagnostic_path(cfg, "occupation_diagnostic")
+    ov = json.loads(diag.read_text()).get("outvoted") if diag and diag.exists() else None
+    if ov:
+        las = ", ".join(ov["example_las"])
+        base += " " + _words(f"""
+            The clearest cases are farming and building trades in places such as
+            {las}: among the highest in the country for occupational risk and among
+            the lowest for poverty. They sit around {_ordinal(ov['median_rank'])} of
+            {ov['n_areas']:,} here, and the best-placed of them is
+            {_ordinal(ov['best_rank'])}. That follows from the weights we chose, not
+            from anything in the data.""")
+
+    flag = _diagnostic_path(cfg, "blind_spot")
+    if flag is None or not flag.exists():
+        return base + " " + _words("""
+            If those places matter to you, they need looking for separately. This
+            list will not surface them.""")
+
+    bs = json.loads(flag.read_text())
+    n, total = bs["n_flagged"], bs["n_areas"]
+    if not n:
+        return base + " " + _words("""
+            Every area is checked for this, and on this run no area met the test.""")
+    rank = bs.get("ranking", {})
+    return base + " " + _words(f"""
+        Those places are no longer left invisible. Every area is now tested for the
+        pattern, and {n:,} of {total:,} are marked: the work their men do carries at
+        least the average suicide risk for men in work across England and Wales,
+        while this index still puts them in its bottom half. Each one carries the
+        mark in its own breakdown, and the map can show them on their own. Read the
+        mark as a statement about this ranking rather than about the place. It says
+        the ranking cannot see the risk there — the best-placed of them sits
+        {_ordinal(rank.get('best_rank', 0))} of {total:,} and none reaches the
+        shortlist. It does not say a group should open there: being hard to reach is
+        a separate question, and some of the marked areas already have a group
+        nearby.""")
+
+
+def blind_spot_definition(cfg: Config) -> str:
+    """What the mark means, stated in general. The per-area wording is below.
+
+    Two forms of the same copy because a section heading and a single area's
+    breakdown are different sentences — "areas where" versus "here" — and writing
+    one and bending it produced "Marked as an occupational blind spot" under a
+    heading that already said so.
+    """
+    return _words("""
+        Some areas carry a mix of jobs that is more dangerous than average without
+        being poor. Where the work men do carries at least the average suicide risk
+        for men in work across England and Wales, and this ranking still scores the
+        area below average need, the area is marked. The mark says the ranking is
+        blind there, because poverty and men living alone outweigh the jobs factor
+        about two to one. It does not by itself say a group should open there.""")
+
+
+def blind_spot_note(cfg: Config, flagged: bool | None) -> str:
+    """One plain sentence for a single area's breakdown. Descriptive only."""
+    if flagged is None:
+        return ""
+    if not flagged:
+        return _words("""
+            Not marked as an occupational blind spot: either the work done here does
+            not carry above-average risk, or the ranking is already picking that risk
+            up through the other factors.""")
+    return _words("""
+        Marked as an occupational blind spot. The mix of jobs men do here carries at
+        least the average suicide risk for men in work across England and Wales, and
+        this ranking still scores the area below average need, because poverty and
+        men living alone outweigh the jobs factor about two to one. The mark says the
+        ranking is blind here. It does not by itself say a group should open here.""")
+
+
+def remoteness_note(cfg: Config, median_male_pop: float | None = None) -> str:
+    """What the remoteness view is, what it is not, and whether a group fits.
+
+    Three things a reader has to be told, or the view misleads. It re-ranks; it
+    does not re-score. The cut is remoteness, not rurality, and the reason is
+    measured rather than assumed. And a weekly group in a room needs enough men
+    in that room, which is the part a ranking cannot answer.
+    """
+    v = cfg["vintages"].get("remoteness", "ONS Rural-Urban Classification 2021")
+    pop = (f" These areas hold a fairly ordinary number of working-age men — a median "
+           f"of about {int(round(median_male_pop)):,} — but spread over far more "
+           f"ground than an urban neighbourhood of the same count."
+           if median_male_pop and median_male_pop == median_male_pop else "")
+    return _words(f"""
+        {v}. This view re-ranks a subset of the map. It does not re-score anything:
+        every figure here is the same figure the main list uses, and no area moves up
+        or down because it is remote. The cut is on remoteness — whether an area is
+        further from a major town or city — and not on whether it is rural, because
+        measured on this data the signal sits entirely in the "further" half. Rural
+        areas near a town score low on occupational risk, and remote urban
+        neighbourhoods carry the highest poverty of any class, so a rural-only cut
+        would have kept the wrong 2,127 areas and dropped the right 2,451. It uses
+        the per-capita ranking, not reach: reach multiplies by population, so remote
+        areas can never win on it, and for a weekly group meeting in a room that is
+        arguably the right answer rather than a fault.{pop} A conventional weekly
+        group may simply not be viable in one of them, and the honest answer may be a
+        travelling group, or one group in the market town that several of these areas
+        can reach between them. That is a judgement for people who know the place.
+    """)
+
+
 def data_caveats(cfg: Config) -> list[dict]:
     v = cfg["vintages"]
     return [
@@ -120,16 +271,28 @@ def data_caveats(cfg: Config) -> list[dict]:
             0.72 with isolation and 0.63 with occupation at council level, which is
             why the council-level fit cannot be used to set the weights."""),
         _entry("Occupation", f"""
-            {v['census']}. Based on where high-risk workers live rather than where they
-            work, and at the broadest occupational grouping, which is the only
-            occupation-by-sex breakdown published at this level. A broad measure."""),
+            {v['occupation']}. Each occupational group is weighted by the suicide rate
+            actually recorded for men in it, so elementary trades count for roughly
+            three times the average and corporate managers for less than a third,
+            rather than every manual job counting the same. Four things to hold in
+            mind. The rates are English, from deaths registered between 2011 and 2015,
+            and are applied to Wales because nothing Welsh exists. They are the last
+            of their kind: the 2016 to 2020 update was cancelled. Eight of the
+            twenty-six groups showed no difference from the average, or too few deaths
+            to tell, and are counted as average rather than guessed at. And the
+            detailed mix of trades is published only for areas about five times larger
+            than the ones ranked here, so neighbourhoods within one of those larger
+            areas share an answer for which trades their men do, differing only in how
+            many. It also counts where those men live, not where they work."""),
         _entry("Isolation", """
             Male single/separated/divorced (sex-specific) plus the one-person-household
             share, which is a household measure: Census 2021 publishes no sex-broken
             living-alone figure at this grain."""),
         _entry("Population", f"{v['population']}. Provision: {v['provision']}."),
+        _entry("Remoteness", remoteness_note(cfg)),
         _entry("Travel time", travel_note(cfg)),
         _entry("Public transport", public_transport_note(cfg)),
+        _entry("What this list will not show you", outvoted_note(cfg)),
         _entry("Likely need, not prediction", """
             Area-level only, and never to be read as a statement about any individual.
             This is a shortlist for local judgement. Venue, volunteers and partner
@@ -147,7 +310,14 @@ def assurance_notes(cfg: Config) -> list[dict]:
         The weights are stated in config.yaml rather than produced by a model. With
         roughly 300 local authorities and three factors that overlap heavily, the
         council-level model cannot separate them. Its job is to veto a weight the data
-        contradicts, not to supply one.""")]
+        contradicts, not to supply one."""),
+        _entry("One check is not independent", """
+        The occupation factor is built from recorded suicide rates by occupation, so
+        the council-level check finds it strongly associated with recorded suicides
+        partly by construction. That association is not independent evidence that
+        occupation belongs in the ranking. What it does still test is whether the
+        national occupational pattern from 2011 to 2015 shows up in recent
+        differences between council areas, which is a real question, and it does.""")]
 
     weights_path, sens_path = cfg.path("weights"), cfg.path("sensitivity")
 

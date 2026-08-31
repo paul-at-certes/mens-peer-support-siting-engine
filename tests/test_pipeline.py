@@ -24,6 +24,8 @@ def _temp_cfg(tmp_path) -> Config:
         "scored_geojson": "output/fact_score.geojson",
         "sensitivity": "output/sensitivity.json",
         "fact_tier": "output/fact_tier.parquet",
+        "occupation_diagnostic": "output/occupation_diagnostic.json",
+        "blind_spot": "output/blind_spot.json",
     }
     cfg.root = tmp_path
     # Smaller fixture keeps the test fast but big enough to fit the GLM.
