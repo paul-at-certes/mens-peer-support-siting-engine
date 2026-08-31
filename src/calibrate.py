@@ -107,24 +107,28 @@ def _veto(cfg: Config, declared: dict, univariate_fit: dict,
             findings.append({
                 "component": name, "severity": "contradicted", "declared_weight": w,
                 "univariate_ci": [lo, hi],
-                "message": (f"{name}: LA fit says protective (95% CI [{lo:.3f}, {hi:.3f}] "
-                            f"entirely below zero) but it is weighted {w:.2f} upward."),
+                "message": (f"{name}: the council-level fit associates this factor with "
+                            f"FEWER deaths, not more, yet it carries a weight of {w:.2f} "
+                            f"(95% confidence interval {lo:.3f} to {hi:.3f}, entirely "
+                            f"below zero)."),
             })
         elif lo <= 0 <= hi and w > floor:
             findings.append({
                 "component": name, "severity": "unsupported", "declared_weight": w,
                 "univariate_ci": [lo, hi],
-                "message": (f"{name}: association not distinguishable from zero at LA level "
-                            f"(95% CI [{lo:.3f}, {hi:.3f}]) yet carries weight {w:.2f} "
-                            f"(> floor {floor:.2f})."),
+                "message": (f"{name}: no association can be distinguished from zero at "
+                            f"council level (95% confidence interval {lo:.3f} to "
+                            f"{hi:.3f}), yet it carries a weight of {w:.2f}, above the "
+                            f"{floor:.2f} threshold at which we ask for evidence."),
             })
     for name in declared:
         if components[name]["collinearity_signflip"]:
             findings.append({
                 "component": name, "severity": "collinearity",
                 "declared_weight": declared[name],
-                "message": (f"{name}: positive alone but negative in the multivariable fit — "
-                            f"collinear with another proxy. Informational, not a veto."),
+                "message": (f"{name}: on its own it points the expected way, but flips "
+                            f"when the factors are fitted together, because it overlaps "
+                            f"with another one. Noted for information; not a veto."),
             })
     severities = {f["severity"] for f in findings}
     status = ("contradicted" if "contradicted" in severities

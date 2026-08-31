@@ -41,7 +41,10 @@ def test_ci_below_zero_is_contradicted():
     assert v["status"] == "contradicted"
     finding = next(f for f in v["findings"] if f["component"] == "deprivation")
     assert finding["severity"] == "contradicted"
-    assert "protective" in finding["message"]
+    # The message reaches the map face and the PDF, so it must name the component
+    # and quote the interval rather than leave the reader to guess.
+    assert finding["message"].startswith("deprivation:")
+    assert "-0.150" in finding["message"] and "-0.010" in finding["message"]
 
 
 def test_ci_spanning_zero_above_the_floor_is_unsupported():

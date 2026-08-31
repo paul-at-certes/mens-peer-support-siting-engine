@@ -72,27 +72,29 @@ area_names = dict(zip(df["area_code"], df["area_name"]))
 # --- Header -----------------------------------------------------------------
 st.title("Men's Peer-Support Siting Engine")
 st.caption(
-    "A **resource-allocation** tool on **aggregate open data**. It ranks areas by "
-    "*latent unmet need* for a men's peer-support group — it does **not** predict "
-    "deaths or score individuals. The output is a **shortlist for local judgement**, "
-    "not an automated siting decision."
+    "A resource-allocation tool built on aggregate open data. It ranks areas by "
+    "likely unmet need for a men's peer-support group. It does not predict deaths "
+    "or score individuals, and its output is a shortlist for local judgement "
+    "rather than an automated siting decision."
 )
 _dw = cfg["scoring"]["component_weights"]
 _veto_status = (weights_meta.get("veto", {}) or {}).get("status")
-_veto_label = {"pass": "✅ passed", "collinearity": "✅ passed (collinearity noted)",
-               "unsupported": "⚠️ flagged", "contradicted": "🚩 flagged"}.get(
-    _veto_status, "not run")
+_veto_label = {"pass": "passed",
+               "collinearity": "passed, with a note about overlapping factors",
+               "unsupported": "flagged a weight the data cannot evidence",
+               "contradicted": "flagged a weight the data contradicts"}.get(
+    _veto_status, "did not run")
 st.caption(
-    f"Declared weights: **{_dw['deprivation']:.2f}** deprivation · "
-    f"**{_dw['occupation']:.2f}** occupation · **{_dw['isolation']:.2f}** isolation "
-    f"(stated in `config.yaml`, not fitted). LA-level veto check: **{_veto_label}**"
-    + (f" on {weights_meta['n_las']} LAs ({weights_meta.get('family','?')} model)."
-       if weights_meta else ".")
-    + " See the weighting & robustness panel below."
+    f"Declared weights: {_dw['deprivation']:.2f} deprivation, "
+    f"{_dw['occupation']:.2f} occupation, {_dw['isolation']:.2f} isolation, "
+    f"stated in `config.yaml` rather than fitted. "
+    + (f"Checked against {weights_meta['n_las']} council areas, where the veto "
+       f"{_veto_label}. " if weights_meta else f"The veto check {_veto_label}. ")
+    + "See the weighting and robustness panel below."
 )
-st.page_link("views/guide.py", label="**New here?** Read the beginner's guide — "
-             "what this is, where the data comes from, and how the tiers work.",
-             icon="📖")
+st.page_link("views/guide.py", icon=":material/menu_book:",
+             label="New here? The beginner's guide explains what this is, where the "
+                   "data comes from and how the tiers work.")
 
 # --- Sidebar: view + filters ------------------------------------------------
 view = st.sidebar.radio(
@@ -164,7 +166,7 @@ view_df["_radius"] = (1500 + 6000 * view_df["_norm"]).astype(int)
 # score renders as 0.9440000000000001. Both layers carry the same two columns so
 # a single deck-level template serves area markers and group markers alike.
 score_name = "priority" if score_col == "priority_score" else "reach"
-view_df["_tip_title"] = view_df["area_code"] + " — " + view_df["area_name"].astype(str)
+view_df["_tip_title"] = view_df["area_code"] + ": " + view_df["area_name"].astype(str)
 view_df["_tip_body"] = (
     score_name + ": " + view_df[score_col].map("{:,.2f}".format)
     + "\nneed: " + view_df["need_index"].map("{:.2f}".format)
@@ -188,7 +190,7 @@ selected_code = (ranked["area_code"].iloc[_rows[0]]
                  if _rows and _rows[0] < len(ranked) else None)
 
 # --- Map (full width) -------------------------------------------------------
-st.subheader(f"Priority surface — {view}")
+st.subheader(f"Priority surface: {view}")
 layers = [
     pdk.Layer(
         "ScatterplotLayer",
@@ -203,7 +205,7 @@ if show_groups and len(groups):
     group_pts = groups.copy()
     group_pts["_tip_title"] = (group_pts["name"].astype(str) + " ("
                                + group_pts["org"].astype(str) + ")")
-    group_pts["_tip_body"] = ("existing group · " + group_pts["status"].astype(str)
+    group_pts["_tip_body"] = ("Existing group, " + group_pts["status"].astype(str)
                               + "\n" + group_pts["postcode"].astype(str))
     layers.append(pdk.Layer(
         "ScatterplotLayer",
@@ -247,13 +249,16 @@ st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view_state,
                          tooltip=tooltip, map_style=None), height=560)
 _sel_note = ""
 if selected_code is not None:
-    _hidden = "" if selected_code in set(map_df["area_code"]) else " — outside the current scope, shown anyway"
-    _sel_note = (f" 🟡 **{selected_code} — {area_names.get(selected_code, '')}** "
-                 f"selected in the shortlist{_hidden}.")
+    _hidden = ("" if selected_code in set(map_df["area_code"])
+               else ", which sits outside the current scope but is shown anyway")
+    _sel_note = (f" Ringed in yellow: {selected_code}, "
+                 f"{area_names.get(selected_code, '')}, selected in the "
+                 f"shortlist{_hidden}.")
 st.caption(
-    f"Showing **{len(map_df):,}** of {len(view_df):,} areas — {scope_note}. "
-    "🔴 = priority (darker/larger = higher), scaled against all areas in the "
-    f"chosen nation(s).  🔵 = existing groups. Hover for figures.{_sel_note}"
+    f"Showing {len(map_df):,} of {len(view_df):,} areas ({scope_note}). "
+    "Red marks priority, darker and larger meaning higher, scaled against all "
+    "areas in the chosen nation or nations. Blue marks existing groups. Hover "
+    f"over either for figures.{_sel_note}"
 )
 if not len(map_df):
     st.info("No areas match this scope. Widen the nation or map filter.")
@@ -283,11 +288,11 @@ with table_col:
     if "tier" in ranked.columns:
         _view_word = "per-capita" if score_col == "priority_score" else "reach"
         st.caption(
-            f"**Tier, not rank** — computed on the **{_view_word}** ranking, the one "
-            f"shown. ① areas sit inside the top {sens.get('shortlist_n', 100)} under "
-            "*every* configuration tested; ② reach it under *some*. The evidence "
-            "separates the tiers; within a tier it does not separate the areas, so "
-            "treat them as jointly prioritised and let local judgement decide."
+            f"Tiers, not ranks, computed on the {_view_word} ranking shown here. "
+            f"① areas sit inside the top {sens.get('shortlist_n', 100)} under every "
+            "configuration tested, ② under some of them. The evidence separates the "
+            "tiers but not the areas within one, so treat a tier as jointly "
+            "prioritised and let local judgement decide between them."
         )
 
 with detail_col:
@@ -296,16 +301,20 @@ with detail_col:
     pick = st.selectbox(
         "Area", _codes,
         index=_codes.index(selected_code) if selected_code in _codes else 0,
-        format_func=lambda c: f"{c} — {area_names.get(c, '')}",
+        format_func=lambda c: f"{c}: {area_names.get(c, '')}",
     )
     if pick:
         row = df[df["area_code"] == pick].iloc[0]
         fb = json.loads(row["factor_breakdown"])
-        tier_note = (f" · **{TIER_LABEL.get(row['tier'], '—')}** "
-                     f"(rank {int(row['rank_best'])}–{int(row['rank_worst'])} across "
-                     f"configurations)" if "tier" in row and pd.notna(row.get("tier")) else "")
-        st.markdown(f"**{pick}** — {row['area_name']} ({row['nation']}), "
-                    f"LA: {row['la_name']}{tier_note}")
+        if "tier" in row and pd.notna(row.get("tier")):
+            _lo, _hi = int(row["rank_best"]), int(row["rank_worst"])
+            _span = (f"ranked {_lo} in every configuration tested" if _lo == _hi
+                     else f"ranked between {_lo} and {_hi} across the configurations tested")
+            tier_note = f" {TIER_LABEL.get(row['tier'], '')}, {_span}."
+        else:
+            tier_note = ""
+        st.markdown(f"**{pick}**, {row['area_name']} ({row['nation']}). "
+                    f"Council area: {row['la_name']}.{tier_note}")
         c1, c2, c3 = st.columns(3)
         c1.metric("need", f"{fb['need_index']:.2f}")
         c2.metric("supply", f"{fb['supply_index']:.2f}")
@@ -326,13 +335,13 @@ with detail_col:
                 "contribution": st.column_config.NumberColumn(format="%.2f"),
             },
         )
-        st.caption(f"Nearest group: {row['travel_minutes']:.0f} min · "
-                   f"groups within catchment: {row['groups_within_catchment']}")
+        st.caption(f"Nearest group {row['travel_minutes']:.0f} minutes away. "
+                   f"Groups within the catchment: {row['groups_within_catchment']}.")
         if pick in robustness:
             ret = robustness[pick]
-            tag = "✅ robust" if ret >= 0.8 else ("⚠️ moderate" if ret >= 0.5 else "🚩 low-confidence")
-            st.caption(f"Shortlist robustness: stays in the top-{sens.get('shortlist_n')} "
-                       f"in **{ret:.0%}** of weight perturbations — {tag}.")
+            tag = "robust" if ret >= 0.8 else ("moderate" if ret >= 0.5 else "low confidence")
+            st.caption(f"Robustness: stays in the top {sens.get('shortlist_n')} in "
+                       f"{ret:.0%} of weight perturbations, rated {tag}.")
 
 # --- Weighting & robustness panel ------------------------------------------
 st.divider()
@@ -340,7 +349,7 @@ st.divider()
 _assurance = assurance_notes(cfg)
 _stability = next((n for n in _assurance if n["label"] == "Stability check"), None)
 if _stability and _stability["body"].startswith("UNSTABLE"):
-    st.warning(f"**Stability check — {_stability['body']}**")
+    st.warning(f"Stability check: {_stability['body']}")
 
 if sens:
     with st.expander("Weighting & robustness (how much do our choices matter?)",
@@ -350,13 +359,13 @@ if sens:
 
         st.markdown("---")
         st.markdown(
-            f"Three things are varied, one at a time. The test that matters is "
-            f"**displacement**: of the top **{sens.get('decision_n')}** areas — the ones "
-            f"you would actually act on — how many stay inside the top "
-            f"**{sens.get('contention_band')}**? Set membership is a poor test, because "
-            f"an area at rank 101 versus 99 flips in and out of a shortlist without "
-            f"changing any decision. Overlap is shown too, as a **share** of the "
-            f"top-{sens['shortlist_n']}."
+            f"Three things are varied, one at a time. The test that decides the "
+            f"verdict is displacement: of the top {sens.get('decision_n')} areas, the "
+            f"ones you would act on, how many stay inside the top "
+            f"{sens.get('contention_band')}? Membership of a fixed list is a poor "
+            f"test, because an area at rank 101 rather than 99 drops off it without "
+            f"anything changing. Overlap is shown as well, as a share of the "
+            f"top {sens['shortlist_n']}."
         )
 
         alts = sens.get("alternatives", {})
@@ -374,9 +383,9 @@ if sens:
                           if alts[k].get("discards_evidenced") else "")}
                 for k in alts]), hide_index=True, use_container_width=True)
             st.caption(
-                "A weighting that discards a proxy the LA fit finds significantly "
-                "associated with suicide is dropping evidence rather than weighing it — "
-                "it is usually the outlier here."
+                "A weighting that drops a factor the council-level fit finds "
+                "significantly associated with suicide is discarding evidence rather "
+                "than weighing it. That is usually the outlier in this table."
             )
 
         env = sens.get("envelope", {})
@@ -405,9 +414,9 @@ if sens:
                 for k, v in sorted(sup.items(), key=lambda kv: kv[1]["overlap"])
             ]), hide_index=True, use_container_width=True)
             st.caption(
-                "The supply surface gates the shortlist hard — most of the top 100 sits "
-                "in the bottom decile of supply — so these two hand-set constants get "
-                "the same scrutiny as any weight."
+                "The supply surface does most of the filtering: the great majority "
+                "of the top 100 sits in the bottom tenth for access. These two "
+                "hand-set constants therefore get the same scrutiny as any weight."
             )
 
 # --- Caveats / vintages on the face ----------------------------------------

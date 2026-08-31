@@ -23,53 +23,56 @@ def travel_note(cfg: Config) -> str:
     """Describe the routing actually used — never a hard-coded assumption."""
     provider = cfg["accessibility"].get("provider", "haversine")
     if provider == "osrm":
-        return ("real road driving times on the GB road network via a self-hosted OSRM "
-                "routing engine. Car only — public-transport access is not modelled, "
-                "which matters for this population: evening sessions and men without "
-                "cars in deprived areas face a journey this does not represent.")
+        return ("real road driving times on the GB road network, from a routing "
+                "engine we host ourselves. Car only. Public transport is not "
+                "modelled, which matters here: sessions run in the evening, and men "
+                "without cars in deprived areas face a journey this does not show.")
     if provider == "ors":
-        return ("OpenRouteService driving times (car only; public-transport access "
-                "is not yet modelled).")
-    return (f"the {provider} provider — straight-line distance at a constant assumed "
-            f"speed. Measured against real road routing on this data it is wrong in "
-            f"BOTH directions: it under-states typical journeys (median nearest group "
-            f"10.2 min against 13.8 by road) while over-stating the worst ones, because "
-            f"a flat speed ignores motorways (90th percentile 41.4 min against 35.1). "
-            f"Car only; public transport is not modelled.")
+        return ("OpenRouteService driving times. Car only. Public transport is not "
+                "yet modelled.")
+    return (f"the {provider} provider, which uses straight-line distance at a "
+            f"constant assumed speed. Measured against real road routing on this "
+            f"data it errs in both directions. It understates typical journeys, "
+            f"putting the nearest group 10.2 minutes away against 13.8 by road, and "
+            f"overstates the worst ones, because a flat speed ignores motorways: 41.4 "
+            f"minutes at the 90th percentile against 35.1. Car only, and public "
+            f"transport is not modelled.")
 
 
 def data_caveats(cfg: Config) -> list[dict]:
     v = cfg["vintages"]
     return [
         _entry("Suicide signal", f"""
-            {v['suicide']}. Local-Authority grain only, with a ~200-270 day registration
-            lag, so it CHECKS the weighting and contributes one low-weighted term — it
-            never ranks areas on its own. No small-area suicide rate is fabricated.
-            Covers England AND Wales. Counts are male ALL AGES, not working age: the
-            publisher zeroes any cell below 5, which at working-age-band granularity
-            loses about half the deaths and loses them disproportionately in small local
-            authorities. All-ages recovers 96.6% of the published national total; the
-            remaining ~3.4% is lost to that same rule. The proxies are working-age
-            measures, so the outcome is broader than the population targeted."""),
+            {v['suicide']}. Published for local authorities only, and registered
+            roughly 200 to 270 days after the death. It checks the weighting and
+            contributes one lightly weighted term. It never ranks areas on its own,
+            and no small-area suicide rate is invented. England and Wales are both
+            covered. Counts are for men of all ages rather than working age, because
+            the publisher zeroes any figure below 5: at working-age granularity that
+            loses about half the deaths, and loses them mostly in small local
+            authorities. All ages recovers 96.6% of the published national total, with
+            the remaining 3.4% lost to the same rule. The other factors are working-age
+            measures, so this outcome is broader than the population targeted."""),
         _entry("Deprivation", f"""
-            {v['deprivation']}. Within-nation percentiles only (England publishes scores,
-            Wales publishes ranks — not comparable across the border). Collinear with both
-            other proxies (0.72 with isolation, 0.63 with occupation at LA level), which
-            is why the LA-level fit cannot be used to set the weights."""),
+            {v['deprivation']}. Ranked within each nation only. England publishes
+            scores and Wales publishes ranks, and the two are not comparable across
+            the border. It also overlaps heavily with both other factors, correlating
+            0.72 with isolation and 0.63 with occupation at council level, which is
+            why the council-level fit cannot be used to set the weights."""),
         _entry("Occupation", f"""
-            {v['census']}. Residence-based — where high-risk workers live, not where they
-            work — and at SOC major-group resolution, the only occupation-by-sex cut
-            available at this grain. A broad proxy."""),
+            {v['census']}. Based on where high-risk workers live rather than where they
+            work, and at the broadest occupational grouping, which is the only
+            occupation-by-sex breakdown published at this level. A broad measure."""),
         _entry("Isolation", """
             Male single/separated/divorced (sex-specific) plus the one-person-household
             share, which is a household measure: Census 2021 publishes no sex-broken
             living-alone figure at this grain."""),
         _entry("Population", f"{v['population']}. Provision: {v['provision']}."),
         _entry("Travel time", travel_note(cfg)),
-        _entry("Latent need, not prediction", """
+        _entry("Likely need, not prediction", """
             Area-level only, and never to be read as a statement about any individual.
-            This is a shortlist for local judgement — venue, volunteers and partner
-            appetite decide siting, not this ranking."""),
+            This is a shortlist for local judgement. Venue, volunteers and partner
+            appetite decide where a group opens, not this ranking."""),
     ]
 
 
@@ -80,30 +83,30 @@ def assurance_notes(cfg: Config) -> list[dict]:
     both are optional, and their absence is itself reported.
     """
     notes = [_entry("How the weights were set", """
-        The component weights are a DECLARED PRIOR stated in config.yaml, not a
-        regression output. With ~292 Local Authorities and three mutually collinear
-        proxies, the LA-level model does not identify them. The model's job is to veto
-        a weight the data contradicts, not to supply it.""")]
+        The weights are stated in config.yaml rather than produced by a model. With
+        roughly 300 local authorities and three factors that overlap heavily, the
+        council-level model cannot separate them. Its job is to veto a weight the data
+        contradicts, not to supply one.""")]
 
     weights_path, sens_path = cfg.path("weights"), cfg.path("sensitivity")
 
     if not weights_path.exists():
         notes.append(_entry("Calibration check", """
-            NOT RUN — no LA-level outcome data was available for this build, so the
-            declared weights are unchecked. They still produced this ranking."""))
+            Not run. No council-level outcome data was available for this build, so
+            the stated weights are unchecked. They still produced this ranking."""))
     else:
         veto = json.loads(weights_path.read_text()).get("veto", {})
         status, findings = veto.get("status", "unknown"), veto.get("findings", [])
         headline = {
-            "pass": "PASSED — the LA-level fit contradicts none of the declared weights.",
-            "collinearity": ("PASSED, with collinearity notes — no declared weight is "
-                             "contradicted, but the proxies overlap."),
-            "unsupported": ("FLAGGED — a weighted proxy is not individually evidenced at "
-                            "LA level."),
-            "contradicted": ("FLAGGED — the LA-level fit points the opposite way to a "
-                             "declared weight."),
-        }.get(status, "status unknown.")
-        body = "Veto check " + headline
+            "pass": "found nothing to contradict any of the stated weights.",
+            "collinearity": ("found nothing to contradict the stated weights, but noted "
+                             "that the factors overlap one another."),
+            "unsupported": ("flagged a factor that carries weight without being "
+                            "evidenced on its own at council level."),
+            "contradicted": ("flagged a stated weight that the fit points the opposite "
+                             "way to."),
+        }.get(status, "of unknown status.")
+        body = "The council-level check " + headline
         if findings:
             body += " " + " ".join(f["message"] for f in findings)
         notes.append(_entry("Calibration check", body))
@@ -123,36 +126,36 @@ def assurance_notes(cfg: Config) -> list[dict]:
         detail = "; ".join(
             f"{readable.get(k, k)} (only {checks[k]['worst_held']:.0%} held)" for k in unstable)
         notes.append(_entry("Stability check", f"""
-            UNSTABLE with respect to {detail}. Areas we would act on drop out of
+            Unstable with respect to {detail}. Areas we would act on drop out of
             contention under an alternative configuration, so read this as a starting
             point for local judgement rather than as a ranking."""))
     else:
         worst = max((c for c in checks.values() if c.get("worst_rank")),
                     key=lambda c: c["worst_rank"], default=None)
-        tail = (f" Across every alternative tested the furthest any of them fell was to "
-                f"rank {worst['worst_rank']}." if worst else "")
+        tail = (f" Across every alternative tested, the furthest any of them fell was "
+                f"to rank {worst['worst_rank']}." if worst else "")
         notes.append(_entry("Stability check", f"""
-            STABLE. Of the top {D} areas — the ones you would actually act on — 100% stay
+            Stable. Of the top {D} areas, the ones you would actually act on, all stay
             inside the top {band} under every alternative weighting, every draw from the
-            range the LA fit supports, and every travel-time and catchment setting
-            tested.{tail} The ORDER within the leading group is much less certain than
-            its membership, which is why the output is banded into tiers rather than
-            read as a strict ranking."""))
+            range the council-level fit supports, and every travel-time and catchment
+            setting tested.{tail} The order within the leading group is far less certain
+            than its membership, which is why the output is banded into tiers rather
+            than read as a strict ranking."""))
 
     tiers = sens.get("tiers") or {}
     if tiers:
         c, rc = tiers.get("counts", {}), tiers.get("reach_counts", {})
-        reach_bit = (f" The reach view is tiered separately — {rc.get('shortlist', 0)} and "
-                     f"{rc.get('contention', 0)} — because reach multiplies by population, "
-                     f"so a tier from one ranking says nothing about the other."
-                     if rc else "")
+        reach_bit = (f" The reach view is tiered separately, at {rc.get('shortlist', 0)} "
+                     f"and {rc.get('contention', 0)}, because reach multiplies by "
+                     f"population and a tier from one ranking says nothing about the "
+                     f"other." if rc else "")
         notes.append(_entry("How to read the tiers", f"""
-            {c.get('shortlist', 0)} areas are in the SHORTLIST tier on the per-capita
-            ranking — inside the top {sens.get('shortlist_n')} under every one of the
-            {tiers.get('n_configurations')} configurations tested. A further
-            {c.get('contention', 0)} are IN CONTENTION, reaching that under some
+            {c.get('shortlist', 0)} areas are in the shortlist tier on the per-capita
+            ranking, meaning they sit inside the top {sens.get('shortlist_n')} under
+            every one of the {tiers.get('n_configurations')} configurations tested. A
+            further {c.get('contention', 0)} are in contention, reaching that under some
             configurations but not all.{reach_bit} Within a tier, treat the areas as
-            jointly prioritised: the evidence does not separate them, and local
-            judgement — venue, volunteers, partner appetite — should decide between
-            them."""))
+            jointly prioritised. The evidence does not separate them, and local
+            judgement about venue, volunteers and partner appetite should decide
+            between them."""))
     return notes
