@@ -1,0 +1,18 @@
+# Manually-downloaded source files and all generated artefacts are not committed.
+data/raw/*
+!data/raw/README.md
+data/raw/synthetic/
+data/interim/
+data/output/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.DS_Store
+
+# Local OSRM routing graph (8GB+, rebuildable from OSM extracts)
+osrm-data/

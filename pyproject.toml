@@ -1,0 +1,41 @@
+[project]
+name = "siting-engine"
+version = "0.1.0"
+description = "Men's Peer-Support Siting Engine — ranks UK small areas by unmet need for a men's peer-support group (aggregate open data only)."
+# The brief targets 3.11+, but the code only uses `from __future__ import
+# annotations` for modern typing, so it runs on 3.9+ too. Floor set to 3.9 so it
+# installs on stock macOS Python without forcing a newer interpreter.
+requires-python = ">=3.9"
+dependencies = [
+    "pandas>=2.0",
+    "pyarrow>=14",            # pandas Parquet engine
+    "numpy>=1.26",
+    "statsmodels>=0.14",
+    "pyyaml>=6.0",
+    "requests>=2.31",        # real-data HTTP fetch
+    "odfpy>=1.4",            # read Welsh WIMD .ods
+    "streamlit>=1.30",
+    "pydeck>=0.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+# PDF shortlist report (python -m src.report). reportlab is pure-Python (no
+# system libraries), so it installs cleanly everywhere; kept optional so the
+# core pipeline stays lightweight.
+report = ["reportlab>=4.0"]
+# The brief's nominal stack also named DuckDB + geopandas. The pipeline does NOT
+# need them (it uses pandas + Parquet directly, and ONS centroids come
+# pre-computed so there are no spatial joins). Install only if you want to extend
+# with DuckDB SQL or geopandas spatial work — geopandas pulls GDAL/Fiona.
+stack = ["duckdb>=0.10", "geopandas>=0.14"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["src", "src.ingest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
