@@ -11,6 +11,15 @@ per-area factor breakdown.
 > only**. It never scores, identifies, or targets individuals. The deliverable is
 > a **shortlist for local judgement**, not an automated siting decision.
 
+**If you are struggling, please talk to someone.** Samaritans are free, 24 hours
+a day, on **116 123**, or `jo@samaritans.org`. In the UK you can also text
+**SHOUT to 85258**. This repository is about where to put support, and is no
+substitute for any of it.
+
+**Not affiliated with Andy's Man Club.** They are named throughout because they
+are the model this is built around and their public group listing is one of its
+inputs. They have not endorsed, reviewed or commissioned it.
+
 See [`CLAUDE.md`](CLAUDE.md) for the operational brief and
 [`docs/design.md`](docs/design.md) for the full methodology (the *why*).
 
@@ -55,6 +64,11 @@ pip install -e .   # or: pip install numpy pandas pyarrow statsmodels pyyaml req
 #      config.yaml -> accessibility.provider: haversine   # no server, runs now
 #      config.yaml -> mode: synthetic                     # instant, fully offline
 #      or build the graph and start OSRM — see "Real routing" below
+#
+#    Also on a fresh clone: the list of existing groups is NOT fetched
+#    automatically. Harvesting it is 713 requests against a small charity's
+#    website, so it only runs when you ask for it, once:
+#      python -m src.ingest.provision      # a few minutes, throttled on purpose
 python -m src.pipeline
 #    -> data/output/fact_score.parquet, fact_score.geojson, weights.json
 #    -> prints the declared weights, the LA-level veto verdict, and a
@@ -308,6 +322,60 @@ raw (downloaded / synthetic)
   → score.py            → fact_score.parquet + .geojson   (need × (1 − supply))
   → app/views/          → map + guide
 ```
+
+## How not to use this
+
+The output names specific neighbourhoods. That is the point, and it is also the
+risk, so this is the short version of what the rest of the documentation argues
+at length.
+
+- **Do not present it as a map of suicide risk.** It is not one, and it cannot
+  become one: no small-area suicide rate exists, and none is invented here. The
+  index measures conditions associated with *unmet need for support*. Captioning
+  `fact_score.parquet` as "where men are most likely to take their own lives"
+  would be false, and it would be false about real, named places.
+- **Do not read the order as a ranking.** The evidence separates the tiers, not
+  the areas within one. That is why the output is banded. Rank 3 is not a
+  stronger case than rank 11.
+- **Do not use it on an individual, ever.** Every input is an area aggregate.
+  Nothing here says anything about any person who lives there, and no
+  combination of these outputs can.
+- **Do not site a group on it alone.** It knows nothing about venue,
+  volunteers, partners or whether men in that area would come, and those decide
+  whether a group survives. It narrows the question; people answer it.
+- **Do not quietly change the weights and keep the claims.** They are a declared
+  prior, defended in `config.yaml` and vetoed by the council-level fit. Move
+  them and the sensitivity analysis has to be re-run and re-reported, because
+  the shortlist does move.
+
+## Licence and attribution
+
+**Code:** see [`LICENSE`](LICENSE).
+
+**Data:** none is redistributed here. `.gitignore` deliberately excludes
+`data/raw/`, `data/interim/` and `data/output/`, so the repository carries the
+code that fetches and derives, never the sources or the derived shortlist.
+Please keep it that way. If you publish outputs from this pipeline, you need the
+attributions below, and they are conditions of the licences, not courtesies.
+
+- ONS suicide registrations, Census 2021 (via Nomis), population estimates and
+  the Open Geography Portal boundaries and lookups: **Source: Office for
+  National Statistics licensed under the Open Government Licence v.3.0.**
+  Contains OS data © Crown copyright and database right 2026.
+- Index of Multiple Deprivation 2019: **© Ministry of Housing, Communities and
+  Local Government, licensed under the Open Government Licence v.3.0.**
+- Welsh Index of Multiple Deprivation 2019: **© Welsh Government, licensed under
+  the Open Government Licence v.3.0.**
+- Road network for OSRM routing: **© OpenStreetMap contributors**, available
+  under the [Open Database Licence](https://www.openstreetmap.org/copyright).
+  The cached travel matrix is a derived database; ODbL share-alike conditions
+  apply if you distribute it.
+- Group locations: public listings from the Andy's Man Club group finder,
+  harvested politely (see [`src/ingest/provision.py`](src/ingest/provision.py)).
+
+General guidance on the Open Government Licence is
+[here](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/).
+This section is a good-faith summary, not legal advice.
 
 ## Guardrails (enforced in code & UI)
 

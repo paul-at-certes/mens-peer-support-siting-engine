@@ -1,9 +1,17 @@
 # `data/raw/` — source data
 
 In **`mode: real`** (the default) the pipeline **fetches the automatable sources
-itself** and caches them under `data/raw/real/` (and the AMC harvest at
-`data/raw/amc_groups.json`). Nothing needs to be placed by hand for England &
-Wales. Re-running the pipeline reuses the cache; delete a cached file to force a
+itself** and caches them under `data/raw/real/`. Nothing needs to be placed by
+hand for England & Wales, with **one deliberate exception**: the AMC group
+harvest. It is 713 requests against a small charity's website, so it never runs
+on its own. Run it once, yourself:
+
+```bash
+python -m src.ingest.provision     # -> data/raw/amc_groups.json, a few minutes
+```
+
+It is throttled on purpose. A missing cache fails the pipeline loudly with that
+command rather than silently re-scraping. Re-running the pipeline reuses the cache; delete a cached file to force a
 refresh. In **`mode: synthetic`** a fake fixture is generated under
 `data/raw/synthetic/` and none of this is used.
 
@@ -25,7 +33,7 @@ file X here" message if a (non-automatable) source is ever missing.
 | LSOA 2011 → 2021 crosswalk | `ingest/deprivation.py` | ONS Geo Portal `LSOA11_LSOA21_LAD22_EW_LU_v5` | — | brings IMD/WIMD (2011) onto 2021; split=copy, merge=average |
 | Suicide by LA | `ingest/suicide_la.py` | Nomis API `NM_161_1` (ONS registrations), geography `TYPE434` | LA × cause × sex × age × year | **male, all ages, X60-X84 + Y10-Y34, 5-yr pooled, England & Wales**; denominator is `male_pop` from the population spine |
 | Car or van availability | `ingest/car_access.py` | Nomis `NM_2063_1` (Census 2021 TS045) | LSOA 2021 | no-car **households** ÷ all households; **descriptive context only — never enters a score** |
-| AMC group locations | `ingest/provision.py` | Andy's Man Club WP Store Locator (`admin-ajax.php`) | point | grid-harvested + deduped (~360 groups) |
+| AMC group locations | `ingest/provision.py` | Andy's Man Club WP Store Locator (`admin-ajax.php`) | point | grid-harvested + deduped (~360 groups); **run by hand, throttled** — see above |
 
 ## Manual / not-yet-automated sources
 

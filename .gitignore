@@ -1,9 +1,16 @@
 # Manually-downloaded source files and all generated artefacts are not committed.
+# This is a SAFETY rule as much as a tidiness one, so please do not relax it:
+# it keeps third-party source data out of a public repo, and keeps the derived
+# shortlist - which names real neighbourhoods - from being published without the
+# caveats that make it readable. See README, "How not to use this".
 data/raw/*
 !data/raw/README.md
 data/raw/synthetic/
 data/interim/
 data/output/
+
+# Local machine settings, not shared state.
+.claude/settings.local.json
 
 # Python
 __pycache__/

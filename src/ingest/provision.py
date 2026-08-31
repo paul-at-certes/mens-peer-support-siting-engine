@@ -7,24 +7,50 @@ national list is harvested by tiling the UK with a grid of search points and
 deduping by group id (see ``_harvest``). The harvest is cached to
 ``data/raw/amc_groups.json`` and refreshed only when you re-run it (provision
 changes rarely).
+
+BE A GOOD GUEST. The grid is 713 requests against a small charity's WordPress
+site. Two rules follow, and both are enforced below rather than left to good
+intentions:
+
+  * The harvest NEVER runs on its own. A missing cache fails loudly, the way a
+    missing manual download does, and tells you to run it deliberately::
+
+        python -m src.ingest.provision
+
+    This matters because data/raw/ is gitignored, so every fresh clone starts
+    without the cache. An automatic harvest would mean every person who ever
+    clones this repo silently re-scrapes andysmanclub.co.uk.
+  * Requests are spaced by HARVEST_DELAY_SECONDS. At 0.5s the full grid takes
+    about six minutes, which is a fine price for a once-a-year refresh.
+
+Their robots.txt (checked 2026-08-31) disallows /wp-json/ and /?rest_route=,
+not the admin-ajax.php endpoint used here, so this is within what they permit —
+but they have signalled they would rather not serve bulk API traffic, and the
+politeness above is the least we owe them. If you are running this in earnest,
+tell them: they are the obvious beneficiary of the tool.
 """
 
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pandas as pd
 
 from ..config import Config
 from ..fetch import get
-from ..io_utils import read_csv, require_file, validate_columns
+from ..io_utils import MissingSourceError, read_csv, require_file, validate_columns
 
 REQUIRED = ["group_id", "lon", "lat"]
 
 WPSL_URL = "https://andysmanclub.co.uk/wp-admin/admin-ajax.php"
 # Cached harvest lives at the top level of data/raw/ (vintage-documented there).
 HARVEST_NAME = "amc_groups.json"
+# Pause between grid requests. 713 requests x 0.5s is about six minutes for a
+# refresh you need roughly never, against a charity's site. See the module
+# docstring.
+HARVEST_DELAY_SECONDS = 0.5
 
 
 def _raw_path(cfg: Config) -> Path:
@@ -32,10 +58,14 @@ def _raw_path(cfg: Config) -> Path:
     return base / "provision.csv"
 
 
-def _harvest(cache: Path) -> Path:
-    """Tile the UK with search points and dedupe by group id. Reproducible
-    refresh path; only runs if the cached harvest is absent."""
-    print("[provision] harvesting AMC group finder (WP Store Locator grid) ...")
+def _harvest(cache: Path, delay: float = HARVEST_DELAY_SECONDS) -> Path:
+    """Tile the UK with search points and dedupe by group id.
+
+    Deliberate, never automatic — call it from ``python -m src.ingest.provision``.
+    ``delay`` spaces the requests; do not set it to 0 against the live site.
+    """
+    print(f"[provision] harvesting AMC group finder (WP Store Locator grid), "
+          f"{delay}s between requests. This takes a few minutes by design ...")
     seen: dict[str, dict] = {}
     lat = 49.9
     while lat <= 59.0:
@@ -52,6 +82,7 @@ def _harvest(cache: Path) -> Path:
                 for r in rows:
                     if "id" in r and r.get("lat") and r.get("lng"):
                         seen[str(r["id"])] = r
+            time.sleep(delay)
             lon += 0.45
         lat += 0.30
     records = list(seen.values())
@@ -64,10 +95,17 @@ def _harvest(cache: Path) -> Path:
 def _build_real(cfg: Config, dest: Path) -> Path:
     if dest.exists():
         return dest
-    # Prefer the top-level cached harvest; fall back to (re)harvesting.
+    # The cached harvest is the source. A miss is a loud failure, not a silent
+    # re-scrape of a charity's website — see the module docstring.
     cache = cfg.path("raw") / HARVEST_NAME
     if not cache.exists():
-        _harvest(cache)
+        raise MissingSourceError(
+            f"No cached AMC group harvest at {cache}.\n"
+            f"  This is not fetched automatically: it is 713 requests against a\n"
+            f"  small charity's website, so it only runs when you ask for it.\n"
+            f"  Run it once (takes a few minutes, by design):\n"
+            f"    python -m src.ingest.provision\n"
+            f"  Or set mode: synthetic in config.yaml to run on the fixture.")
     records = json.loads(cache.read_text())
     df = pd.DataFrame(records)
     out = pd.DataFrame({
@@ -98,3 +136,25 @@ def run(cfg: Config) -> pd.DataFrame:
     df.to_parquet(out, index=False)
     print(f"[provision] {len(df)} active groups -> {out.name}")
     return df
+
+
+def main() -> None:
+    """Deliberate re-harvest: ``python -m src.ingest.provision``.
+
+    Kept out of the pipeline on purpose. Delete the cache first to force a
+    genuine refresh; otherwise this reports what is already there and stops.
+    """
+    from ..config import load_config
+
+    cfg = load_config()
+    cache = cfg.path("raw") / HARVEST_NAME
+    if cache.exists():
+        print(f"[provision] harvest already cached at {cache} "
+              f"({len(json.loads(cache.read_text()))} groups).")
+        print("[provision] Delete that file first if you want a fresh harvest.")
+        return
+    _harvest(cache)
+
+
+if __name__ == "__main__":
+    main()
