@@ -59,20 +59,44 @@ def travel_note(cfg: Config) -> str:
     provider = cfg["accessibility"].get("provider", "haversine")
     if provider == "osrm":
         return ("real road driving times on the GB road network, from a routing "
-                "engine we host ourselves. Car only. Public transport is not "
-                "modelled, which matters here: sessions run in the evening, and men "
-                "without cars in deprived areas face a journey this does not show."
-                + _NO_CAR_TAIL)
+                "engine we host ourselves. Car only, which matters here: sessions run "
+                "in the evening, and men without cars face a journey this does not "
+                "show. See the public transport note." + _NO_CAR_TAIL)
     if provider == "ors":
-        return ("OpenRouteService driving times. Car only. Public transport is not "
-                "yet modelled." + _NO_CAR_TAIL)
+        return ("OpenRouteService driving times. Car only. See the public "
+                "transport note." + _NO_CAR_TAIL)
     return (f"the {provider} provider, which uses straight-line distance at a "
             f"constant assumed speed. Measured against real road routing on this "
             f"data it errs in both directions. It understates typical journeys, "
             f"putting the nearest group 10.2 minutes away against 13.8 by road, and "
             f"overstates the worst ones, because a flat speed ignores motorways: 41.4 "
-            f"minutes at the 90th percentile against 35.1. Car only, and public "
-            f"transport is not modelled." + _NO_CAR_TAIL)
+            f"minutes at the 90th percentile against 35.1. Car only. See the "
+            f"public transport note." + _NO_CAR_TAIL)
+
+
+def public_transport_note(cfg: Config) -> str:
+    """What the evening-bus measurement found, and what it must not be read as.
+
+    Measured on a sample, never scored (docs/adr/0002-*). Two deliberate choices
+    in this copy. The DIRECTION of the bias is stated, because the ranking leans
+    that way whether or not we admit it. And the rural half is written as a
+    general statement rather than a per-area claim: the timetables cover buses
+    and not trains, so "no way there" is absence of evidence, while "there is a
+    way" is evidence. We assert only the half we can prove.
+    """
+    return " ".join(f"""
+        {cfg['vintages']['public_transport']}. Not modelled for any individual area,
+        and nothing here changes a score or moves an area up or down. Three things
+        that sample showed, which change how the ranking should be read. Where
+        evening buses run at all, the journey takes about four times the drive. In
+        dense city neighbourhoods the buses generally do work, so this ranking
+        probably OVERSTATES unmet need there: driving is slow because the place is
+        dense, and the frequent transit that density pays for is invisible to a
+        car-only measure. In rural areas an evening round trip is frequently
+        impossible, but that is not claimed of any particular area, because the
+        timetables cover buses and not trains, so somewhere with a station may be
+        better served than this can see.
+    """.split())
 
 
 def data_caveats(cfg: Config) -> list[dict]:
@@ -105,6 +129,7 @@ def data_caveats(cfg: Config) -> list[dict]:
             living-alone figure at this grain."""),
         _entry("Population", f"{v['population']}. Provision: {v['provision']}."),
         _entry("Travel time", travel_note(cfg)),
+        _entry("Public transport", public_transport_note(cfg)),
         _entry("Likely need, not prediction", """
             Area-level only, and never to be read as a statement about any individual.
             This is a shortlist for local judgement. Venue, volunteers and partner

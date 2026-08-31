@@ -293,17 +293,47 @@ top of the shortlist on a number nobody measured.
 **Where this leaves the decision.** The Decision above stands on every point
 except the reasoning in "Consequences" that the shortlist "may be reinforced" —
 nationally it would be *changed*, in a direction worth taking seriously. But the
-finding also suggests the shape that would be defensible, which this ADR did not
-previously see: **a three-valued flag — served / not served / uncertain — rather
-than a score.** Both robust categories are parameter-invariant by construction
-and together cover 69% of areas; the remaining 31% would be shown as uncertain
-rather than resolved by fiat. That exposes the value judgement instead of burying
-it in a percentile, which is the objection this ADR was built on.
+finding also suggests a shape this ADR had not seen. The first sketch was a
+three-valued flag (served / not served / uncertain); better than a score, but it
+still asserts too much. The sharper form rests on an **asymmetry**:
 
-That is a product decision, not a modelling one, and it is not taken here. Rail
-remains a prerequisite for trusting any rural "not served" verdict — Wiltshire
-and Richmondshire, two of the most infeasible LAs in the sample, are exactly
-where a station would change the answer.
+* Finding a journey **proves** feasibility. Adding rail, tram, or a wider walk
+  radius could only ever *add* served areas, never remove one. It is a floor.
+* Failing to find one proves only that none exists **in a bus-only dataset**.
+  Printing "no public transport to this group" beside a neighbourhood with a
+  railway station would be a factual error on a tool that names real places.
+
+So the defensible per-area claim is the positive one alone — *a man without a car
+can reach this group and get home, under every assumption tested* — true of 48.1%
+of sampled areas, parameter-invariant and rail-proof by construction, and sitting
+exactly where the decision-relevant disagreement is. The rural half stays a
+general statement, where it does not have to be right per area. Rail is still the
+prerequisite for ever asserting the negative: Wiltshire and Richmondshire, two of
+the most infeasible LAs in the sample, are where a station would change it.
+
+## What was shipped, 2026-08-31
+
+**Not the per-area column.** It needs a full national run, and it would be the
+first input in the tool with a shelf life — roads do not change, timetables change
+several times a year — so it carries a re-run cadence nothing else here does. It
+remains available and unbuilt.
+
+**The disclosure, which is not optional.** The ranking leans in a measured
+direction whether or not that is stated, and it was being read off a map that said
+only "public transport is not modelled":
+
+- `vintages.public_transport` in `config.yaml`, so the claim carries a vintage
+  like every other input, even though nothing ingests it.
+- `public_transport_note()` in `src/caveats.py` as the single source of the copy,
+  with the three provider travel notes reduced to pointing at it rather than
+  restating it.
+- A named **Public transport** caveat on the map face and in the PDF, stating the
+  direction: this ranking probably *overstates* unmet need in dense city
+  neighbourhoods.
+- A row in the plain-English guide (`app/views/guide.py`).
+- `tests/test_caveats_public_transport.py` pins the direction, the never-scored
+  claim, the vintage, and that the rural half stays general — so the disclosure
+  cannot quietly disappear in a copy edit.
 
 Reproduce with:
 

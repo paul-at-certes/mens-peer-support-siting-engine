@@ -44,6 +44,13 @@ vintages:
   provision: "Andy's Man Club group finder (live harvest via WP Store Locator)"
   car_access: "Census 2021 car or van availability (Nomis TS045 / NM_2063_1), LSOA 2021,
                England & Wales — descriptive context only, never scored"
+  # Public transport is MEASURED, on a sample, and never scored. It is not an
+  # ingested input and no area carries a value for it — the vintage exists so the
+  # caveat copy can state what was measured and when. See
+  # docs/adr/0002-public-transport-feasibility-spike.md.
+  public_transport: "Bus Open Data Service bus timetables (feed 20260831), a Monday
+                     evening, 14 September 2026, measured on a sample of 27 councils
+                     and 3,346 neighbourhoods"
 
 # ---------------------------------------------------------------------------
 # Synthetic fixture — only used when mode == synthetic.

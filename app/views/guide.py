@@ -217,7 +217,11 @@ st.dataframe(
          "Vintage": v["provision"]},
         {"What": "Driving times",
          "Who publishes it": "OpenStreetMap road network, routed on our own machine",
-         "Vintage": "Car driving times. Public transport is not included."},
+         "Vintage": "Car driving times only."},
+        {"What": "Getting there without a car",
+         "Who publishes it": "Bus timetables from the Department for Transport's "
+                             "Bus Open Data Service",
+         "Vintage": v["public_transport"] + ". Context only, never scored."},
     ]),
     hide_index=True, use_container_width=True,
 )
