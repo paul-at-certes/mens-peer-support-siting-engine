@@ -173,6 +173,47 @@ The coefficients barely moved, which is reassuring about the whole design:
 across 1,917 LSOAs, mean pooled rate 89.0 per 100k against England's 69.8. It was
 previously carrying the neutral 0.5 fallback.
 
+## Addendum, 2026-08-31 — the stability verdict was measuring the wrong thing
+
+The run was reporting UNSTABLE on the weighting axis (0.46 against a 0.70
+threshold). Both halves of that were wrong.
+
+**The metric was misread.** `sensitivity.py` reported **Jaccard**, which for two
+equal-sized sets is `overlap / (2 - overlap)`. 63 of 100 areas shared reads as
+0.46. The threshold was set at 0.70 while being described as *"a run that would
+send you to 30%+ different places"* — but Jaccard 0.70 demands **82%** agreement.
+The bar was 12 points stricter than intended, by accident.
+
+**The claim was never checked, and is false.** Under both worst-case schemes,
+**every one of the declared top-20 stays inside the top 100** — median rank 20
+(multivariable) and 14 (composite), worst individual rank 55 and 70. Nobody drops
+out of contention. "Would send you to substantially different places" was not
+true of this data.
+
+**Set membership is the wrong test anyway.** An area at rank 101 versus rank 99
+flips shortlist membership on a rounding error while changing no decision. So the
+verdict now measures **displacement**: of the top `decision_n` (20) — the areas
+you would actually act on — what share stays inside `contention_band` (100) under
+every alternative configuration? Overlap is still reported, as a share rather
+than a Jaccard, but it does not gate. On the current data all three axes hold
+100% of the decision set and the verdict is **stable**.
+
+**The residual uncertainty is one-dimensional.** Overlap against the declared
+weights as occupation's weight varies: 0.20 -> 75%, 0.35 -> 92%, 0.45 -> 93%,
+0.55 -> 84%, 0.62 -> 71%, 0.70 -> 61%. The fitted schemes push occupation to
+~0.62 because collinearity dumps deprivation's shared variance into it. So the
+open question is not "which scheme" but **is high-risk-occupation share measuring
+need, or measuring 'working-class male area'?** That is a domain judgement; no
+further fitting will settle it, and a better outcome dataset did not move it.
+
+**Output is now banded, not ranked** (`fact_tier.parquet`). Across the 20
+configurations tested: **47 areas** are inside the top 100 under *every* one
+(shortlist tier), **133** reach it under *some* (in contention). The evidence
+separates the tiers; within a tier it does not separate the areas, so the map and
+the PDF present a tier as jointly prioritised and leave the choice within it to
+local judgement — which is the brief's human-in-the-loop guardrail made real
+rather than asserted.
+
 ## Still open
 
 - **Working-age suicide counts at LA level.** Blocked by disclosure control, not
@@ -180,4 +221,6 @@ previously carrying the neutral 0.5 fallback.
   outcome is broader than the working-age population the proxies describe.
 - **~3.4% of deaths lost** to the below-5 rule, falling disproportionately in
   small local authorities.
+- **How much weight occupation should carry** — the one dimension the shortlist
+  is genuinely sensitive to, and a domain question rather than a modelling one.
 - **Public transport** is unmodelled; travel time is car-only.

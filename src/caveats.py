@@ -107,26 +107,42 @@ def assurance_notes(cfg: Config) -> list[dict]:
         notes.append(_entry("Stability check", "NOT RUN for this build."))
         return notes
 
-    st = json.loads(sens_path.read_text()).get("stability", {})
+    sens = json.loads(sens_path.read_text())
+    st = sens.get("stability", {})
     checks, unstable = st.get("checks", {}), st.get("unstable_axes", [])
+    D, band = sens.get("decision_n"), sens.get("contention_band")
     readable = {"schemes": "the choice of weighting scheme",
                 "envelope": "the weights moving within what the data supports",
                 "supply": "the travel-time and catchment constants"}
     if unstable:
         detail = "; ".join(
-            f"{readable.get(k, k)} (top-N overlap {checks[k]['worst_overlap']:.2f} vs "
-            f"{checks[k]['threshold']:.2f} threshold)" for k in unstable)
+            f"{readable.get(k, k)} (only {checks[k]['worst_held']:.0%} held)" for k in unstable)
         notes.append(_entry("Stability check", f"""
-            UNSTABLE with respect to {detail}. A differently-but-defensibly configured
-            run would send you to substantially different places, so read this as a
-            starting point for local judgement rather than as a ranking. Per-area
-            robustness is shown alongside each area."""))
+            UNSTABLE with respect to {detail}. Areas we would act on drop out of
+            contention under an alternative configuration, so read this as a starting
+            point for local judgement rather than as a ranking."""))
     else:
-        worst = min(checks.values(), key=lambda c: c["worst_overlap"]) if checks else None
-        tail = (f" Worst observed top-N overlap across all alternatives tested: "
-                f"{worst['worst_overlap']:.2f}." if worst else "")
+        worst = max((c for c in checks.values() if c.get("worst_rank")),
+                    key=lambda c: c["worst_rank"], default=None)
+        tail = (f" Across every alternative tested the furthest any of them fell was to "
+                f"rank {worst['worst_rank']}." if worst else "")
         notes.append(_entry("Stability check", f"""
-            STABLE — the shortlist holds up across alternative weightings, across the
-            weights moving within what the data supports, and across the travel-time and
-            catchment constants.{tail}"""))
+            STABLE. Of the top {D} areas — the ones you would actually act on — 100% stay
+            inside the top {band} under every alternative weighting, every draw from the
+            range the LA fit supports, and every travel-time and catchment setting
+            tested.{tail} The ORDER within the leading group is much less certain than
+            its membership, which is why the output is banded into tiers rather than
+            read as a strict ranking."""))
+
+    tiers = sens.get("tiers") or {}
+    if tiers:
+        c = tiers.get("counts", {})
+        notes.append(_entry("How to read the tiers", f"""
+            {c.get('shortlist', 0)} areas are in the SHORTLIST tier — inside the top
+            {sens.get('shortlist_n')} under every one of the
+            {tiers.get('n_configurations')} configurations tested. A further
+            {c.get('contention', 0)} are IN CONTENTION, reaching that under some
+            configurations but not all. Within a tier, treat the areas as jointly
+            prioritised: the evidence does not separate them, and local judgement —
+            venue, volunteers, partner appetite — should decide between them."""))
     return notes

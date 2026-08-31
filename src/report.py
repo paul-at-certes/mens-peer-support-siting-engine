@@ -128,6 +128,16 @@ def build_reasoning(row: pd.Series, fb: dict, catchment_minutes: int) -> str:
     return driver + sig_clause + supply + reach
 
 
+def _tier_cell(area_code: str, tiers, labels: dict, fallback: str) -> str:
+    """Tier plus the rank range the area spans across tested configurations."""
+    if len(tiers) and area_code in tiers.index:
+        row = tiers.loc[area_code]
+        return (f"{labels.get(row['tier'], '—')}<br/>"
+                f"<font size=6 color='#777777'>rank {int(row['rank_best'])}–"
+                f"{int(row['rank_worst'])}</font>")
+    return fallback
+
+
 def robustness_cell(area_code: str, robustness: dict):
     """(label, is_present) for the robustness column, using the app's thresholds."""
     if area_code in robustness:
@@ -161,6 +171,11 @@ def run(cfg: Config) -> "Path":  # type: ignore[name-defined]
     weights_meta = json.loads(cfg.path("weights").read_text()) if cfg.path("weights").exists() else {}
     sens = json.loads(cfg.path("sensitivity").read_text()) if cfg.path("sensitivity").exists() else {}
     robustness = sens.get("area_robustness", {})
+    tier_path = cfg.path("fact_tier")
+    tiers = (pd.read_parquet(tier_path).set_index("area_code")
+             if tier_path.exists() else pd.DataFrame())
+    TIER_LABEL = {"shortlist": "Shortlist", "contention": "In contention",
+                  "outside": "Outside"}
 
     top = df.sort_values(rank_col).head(top_n).reset_index(drop=True)
 
@@ -227,7 +242,7 @@ def run(cfg: Config) -> "Path":  # type: ignore[name-defined]
     # --- table --------------------------------------------------------------
     story.append(Paragraph(f"Top {len(top)} areas by reach", h2))
     header = ["#", "Area (LSOA)", "Local authority", "Region", "Male<br/>16–64",
-              "Priority<br/>score", "Nearest<br/>group", "Robustness"]
+              "Priority<br/>score", "Nearest<br/>group", "Tier"]
     data = [[Paragraph(f"<b>{h}</b>", cell) for h in header]]
     any_missing_rob = False
     for i, r in top.iterrows():
@@ -242,7 +257,7 @@ def run(cfg: Config) -> "Path":  # type: ignore[name-defined]
             Paragraph(f"{int(r['male_working_age_pop']):,}", cell),
             Paragraph(f"{r['priority_score']:.3f}", cell),
             Paragraph(f"{trav} min", cell),
-            Paragraph(rob_label, cell),
+            Paragraph(_tier_cell(r["area_code"], tiers, TIER_LABEL, rob_label), cell),
         ])
     col_w = [8*mm, 45*mm, 34*mm, 42*mm, 16*mm, 17*mm, 16*mm, 24*mm]
     tbl = Table(data, colWidths=col_w, repeatRows=1)
@@ -260,15 +275,27 @@ def run(cfg: Config) -> "Path":  # type: ignore[name-defined]
 
     # Robustness footnote (reach areas mostly fall outside the per-capita test).
     env = sens.get("envelope", {})
-    if any_missing_rob and "mean_retention" in env:
+    if len(tiers):
+        t = sens.get("tiers", {}) or {}
+        story.append(Spacer(1, 4))
+        story.append(Paragraph(
+            f"<b>Tier, not rank.</b> “Shortlist” areas sit inside the top "
+            f"{sens.get('shortlist_n', 100)} under <i>every</i> one of the "
+            f"{t.get('n_configurations', '?')} configurations tested — alternative "
+            "weightings, weights drawn from the range the Local-Authority fit supports, "
+            "and alternative travel-time and catchment settings. “In contention” areas "
+            "reach it under <i>some</i>. The rank range beneath each tier shows how far "
+            "the area moved. The evidence separates the tiers; within a tier it does not "
+            "separate the areas, so the numbered order here is presentational — treat a "
+            "tier as jointly prioritised and let local judgement decide between them.",
+            foot))
+    elif any_missing_rob and "mean_retention" in env:
         story.append(Spacer(1, 4))
         story.append(Paragraph(
             "“Robustness” tests whether an area stays on the shortlist when the weights "
-            "are moved across the range the Local-Authority fit supports. It is defined "
-            f"on the <b>per-capita</b> top-{sens.get('shortlist_n', 100)} shortlist, so "
-            "most reach-ranked areas here show “—” rather than a fabricated score. "
-            f"Across the ranking as a whole: mean retention {env['mean_retention']:.0%}, "
-            f"with {env.get('n_low_confidence', 0)} low-confidence area(s).", foot))
+            f"are moved across the range the fit supports: mean retention "
+            f"{env['mean_retention']:.0%}, with {env.get('n_low_confidence', 0)} "
+            "low-confidence area(s).", foot))
 
     # --- per-area reasoning -------------------------------------------------
     story.append(Spacer(1, 8))

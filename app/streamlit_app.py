@@ -29,9 +29,22 @@ st.set_page_config(page_title="Men's Peer-Support Siting Engine", layout="wide")
 cfg = load_config()
 
 
+# Tier labels. The evidence separates the tiers; within a tier it does not
+# separate the areas (see sensitivity.py).
+TIER_LABEL = {"shortlist": "① Shortlist", "contention": "② In contention",
+              "outside": "③ Outside"}
+
+
 @st.cache_data
 def load_scores(path_str: str) -> pd.DataFrame:
     return pd.read_parquet(path_str)
+
+
+@st.cache_data
+def load_tiers(path_str: str) -> pd.DataFrame:
+    p = Path(path_str)
+    return (pd.read_parquet(p) if p.exists()
+            else pd.DataFrame(columns=["area_code", "tier", "rank_best", "rank_worst"]))
 
 
 @st.cache_data
@@ -53,9 +66,15 @@ if not score_path.exists():
     st.stop()
 
 df = load_scores(str(score_path)).copy()
+tiers = load_tiers(str(cfg.path("fact_tier")))
+if len(tiers):
+    df = df.merge(tiers[["area_code", "tier", "rank_best", "rank_worst"]],
+                  on="area_code", how="left")
+    df["tier_label"] = df["tier"].map(TIER_LABEL).fillna("③ Outside")
 groups = load_groups(str(cfg.path("interim") / "dim_provision.parquet"))
 weights_meta = load_json(str(cfg.path("weights")))
 sens = load_json(str(cfg.path("sensitivity")))
+
 robustness = sens.get("area_robustness", {})
 
 # --- Header -----------------------------------------------------------------
@@ -147,20 +166,34 @@ with left:
 with right:
     st.subheader(f"Top {top_n} shortlist")
     ranked = view_df.sort_values(score_col, ascending=False).head(top_n)
+    rank_col = "rank" if score_col == "priority_score" else "rank_reach"
+    tbl_cols = [rank_col, "area_code", "nation"]
+    if "tier" in ranked.columns:
+        tbl_cols.append("tier_label")
+    tbl_cols += ["need_index", "supply_index", score_col]
     st.dataframe(
-        ranked[["rank" if score_col == "priority_score" else "rank_reach",
-                "area_code", "nation", "need_index", "supply_index",
-                score_col]].rename(columns={score_col: "score"}),
+        ranked[tbl_cols].rename(columns={score_col: "score", "tier_label": "tier"}),
         hide_index=True, use_container_width=True,
     )
+    if "tier" in ranked.columns:
+        st.caption(
+            "**Tier, not rank.** ① areas sit inside the top "
+            f"{sens.get('shortlist_n', 100)} under *every* configuration tested; ② reach "
+            "it under *some*. The evidence separates the tiers; within a tier it does "
+            "not separate the areas, so treat them as jointly prioritised and let local "
+            "judgement decide."
+        )
 
     st.subheader("Per-area factor breakdown")
     pick = st.selectbox("Area", ranked["area_code"].tolist())
     if pick:
         row = df[df["area_code"] == pick].iloc[0]
         fb = json.loads(row["factor_breakdown"])
+        tier_note = (f" · **{TIER_LABEL.get(row['tier'], '—')}** "
+                     f"(rank {int(row['rank_best'])}–{int(row['rank_worst'])} across "
+                     f"configurations)" if "tier" in row and pd.notna(row.get("tier")) else "")
         st.markdown(f"**{pick}** — {row['area_name']} ({row['nation']}), "
-                    f"LA: {row['la_name']}")
+                    f"LA: {row['la_name']}{tier_note}")
         c1, c2, c3 = st.columns(3)
         c1.metric("need_index", f"{fb['need_index']:.3f}")
         c2.metric("supply_index", f"{fb['supply_index']:.3f}")
@@ -198,9 +231,13 @@ if sens:
 
         st.markdown("---")
         st.markdown(
-            f"Three things are varied, one at a time, and each is scored against the "
-            f"shipped configuration's top-{sens['shortlist_n']} shortlist. Overlap is "
-            f"Jaccard: 1.00 means the identical shortlist."
+            f"Three things are varied, one at a time. The test that matters is "
+            f"**displacement**: of the top **{sens.get('decision_n')}** areas — the ones "
+            f"you would actually act on — how many stay inside the top "
+            f"**{sens.get('contention_band')}**? Set membership is a poor test, because "
+            f"an area at rank 101 versus 99 flips in and out of a shortlist without "
+            f"changing any decision. Overlap is shown too, as a **share** of the "
+            f"top-{sens['shortlist_n']}."
         )
 
         alts = sens.get("alternatives", {})
@@ -210,8 +247,10 @@ if sens:
                 {"weighting": k,
                  "dep/occ/iso": "/".join(f"{alts[k]['weights'][c]:.2f}"
                                          for c in ("deprivation", "occupation", "isolation")),
-                 "top-N overlap": alts[k]["topN_jaccard_vs_declared"],
-                 "Spearman": alts[k]["spearman_vs_declared"],
+                 "decision set held": f"{alts[k]['displacement']['held']:.0%}",
+                 "worst rank": alts[k]["displacement"]["worst_rank"],
+                 "shortlist overlap": f"{alts[k]['overlap']:.0%}",
+                 "Spearman": alts[k]["spearman"],
                  "note": ("discards " + ", ".join(alts[k]["discards_evidenced"])
                           if alts[k].get("discards_evidenced") else "")}
                 for k in alts]), hide_index=True, use_container_width=True)
@@ -222,11 +261,13 @@ if sens:
             )
 
         env = sens.get("envelope", {})
-        if "mean_topN_jaccard" in env:
+        if "mean_held" in env:
             st.markdown("**2. Weights moving within what the data supports**")
             st.markdown(
-                f"- Mean top-N overlap **{env['mean_topN_jaccard']:.2f}** over "
-                f"{env['n_draws']} draws from the {env['basis']}.\n"
+                f"- Decision set held: mean **{env['mean_held']:.0%}** (min "
+                f"{env['min_held']:.0%}) over {env['n_draws']} draws from the "
+                f"{env['basis']}.\n"
+                f"- Mean shortlist overlap **{env['mean_overlap']:.0%}**.\n"
                 f"- Average retention **{env['mean_retention']:.0%}**; "
                 f"**{env['n_low_confidence']}** area(s) below 50% retention.\n"
                 f"- Median rank shift **{env['median_rank_shift']:.0f}** places "
@@ -238,10 +279,11 @@ if sens:
             st.markdown("**3. Travel-time and catchment constants**")
             st.dataframe(pd.DataFrame([
                 {"configuration": k + (" (shipped)" if v["is_shipped"] else ""),
-                 "top-N overlap": v["topN_jaccard_vs_shipped"],
-                 "Spearman": v["spearman_vs_shipped"]}
-                for k, v in sorted(sup.items(),
-                                   key=lambda kv: kv[1]["topN_jaccard_vs_shipped"])
+                 "decision set held": f"{v['displacement']['held']:.0%}",
+                 "worst rank": v["displacement"]["worst_rank"],
+                 "shortlist overlap": f"{v['overlap']:.0%}",
+                 "Spearman": v["spearman"]}
+                for k, v in sorted(sup.items(), key=lambda kv: kv[1]["overlap"])
             ]), hide_index=True, use_container_width=True)
             st.caption(
                 "The supply surface gates the shortlist hard — most of the top 100 sits "

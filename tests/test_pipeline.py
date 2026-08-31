@@ -3,6 +3,7 @@
 import json
 
 import pandas as pd
+import pytest
 
 from src.config import Config, load_config
 from src import pipeline
@@ -22,6 +23,7 @@ def _temp_cfg(tmp_path) -> Config:
         "fact_score": "output/fact_score.parquet",
         "scored_geojson": "output/fact_score.geojson",
         "sensitivity": "output/sensitivity.json",
+        "fact_tier": "output/fact_tier.parquet",
     }
     cfg.root = tmp_path
     # Smaller fixture keeps the test fast but big enough to fit the GLM.
@@ -122,19 +124,65 @@ def test_sensitivity_outputs(tmp_path):
     # 1) named alternatives, including the no-calibration-needed baseline.
     assert {"equal", "multivariable", "univariate", "composite"} <= set(sens["alternatives"])
     for a in sens["alternatives"].values():
-        assert 0.0 <= a["topN_jaccard_vs_declared"] <= 1.0
+        assert 0.0 <= a["overlap"] <= 1.0
+        assert 0.0 <= a["displacement"]["held"] <= 1.0
     # 2) CI envelope.
     assert all(0.0 <= r <= 1.0 for r in sens["area_robustness"].values())
     assert 0.0 <= sens["envelope"]["mean_retention"] <= 1.0
     # 3) supply sweep — the shipped configuration is its own reference.
     shipped = [v for v in sens["supply"].values() if v["is_shipped"]]
     assert len(shipped) == 1
-    assert shipped[0]["topN_jaccard_vs_shipped"] == 1.0
+    assert shipped[0]["overlap"] == 1.0 and shipped[0]["displacement"]["held"] == 1.0
 
     st = sens["stability"]
     assert st["status"] in ("stable", "unstable")
     assert set(st["checks"]) == {"schemes", "envelope", "supply"}
+    # Displacement gates the verdict; overlap is reported but must not.
     assert st["unstable_axes"] == [k for k, c in st["checks"].items() if not c["passes"]]
+    for c in st["checks"].values():
+        assert c["passes"] == (c["worst_held"] >= c["threshold_held"])
+
+
+def test_overlap_share_is_not_jaccard(tmp_path):
+    """The two metrics were conflated once, which set the bar 12 points too high.
+
+    For equal-sized sets Jaccard = overlap / (2 - overlap), so they can only agree
+    at 0 and 1. Both are reported; the share is the one plain language means.
+    """
+    cfg = _temp_cfg(tmp_path)
+    pipeline.run(cfg)
+    sens = json.loads(cfg.path("sensitivity").read_text())
+    n = sens["shortlist_n"]
+    for a in sens["alternatives"].values():
+        assert a["overlap"] == pytest.approx(a["shared"] / n)
+        expected = a["overlap"] / (2 - a["overlap"])
+        assert a["jaccard"] == pytest.approx(expected, abs=1e-3)
+        assert a["jaccard"] <= a["overlap"] + 1e-9
+
+
+def test_tiers_band_the_output(tmp_path):
+    """Tiers express what the evidence separates: membership, not order."""
+    cfg = _temp_cfg(tmp_path)
+    pipeline.run(cfg)
+    sens = json.loads(cfg.path("sensitivity").read_text())
+    tiers = pd.read_parquet(cfg.path("fact_tier"))
+    score = pd.read_parquet(cfg.path("fact_score"))
+
+    assert set(tiers["area_code"]) == set(score["area_code"])
+    assert set(tiers["tier"]) <= {"shortlist", "contention", "outside"}
+    assert (tiers["rank_best"] <= tiers["rank_worst"]).all()
+    assert (tiers["rank_best"] <= tiers["rank_declared"]).all()
+    assert (tiers["rank_declared"] <= tiers["rank_worst"]).all()
+
+    n = sens["shortlist_n"]
+    shortlist = tiers[tiers.tier == "shortlist"]
+    contention = tiers[tiers.tier == "contention"]
+    outside = tiers[tiers.tier == "outside"]
+    # Definitions hold exactly.
+    assert (shortlist["rank_worst"] <= n).all()
+    assert (contention["rank_best"] <= n).all() and (contention["rank_worst"] > n).all()
+    assert (outside["rank_best"] > n).all()
+    assert sens["tiers"]["counts"]["shortlist"] == len(shortlist)
 
 
 def test_no_individual_records_in_outputs(tmp_path):

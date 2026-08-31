@@ -44,7 +44,7 @@ pip install -e .   # or: pip install numpy pandas pyarrow statsmodels pyyaml req
 
 # 1) Run the pipeline.
 #    mode: real (default) fetches + caches the live open data for England &
-#    Wales (~35k LSOAs; first run pulls from ONS/Nomis/Fingertips/AMC, a few
+#    Wales (~35k LSOAs; first run pulls from ONS/Nomis/AMC, a few
 #    minutes; subsequent runs use the cache). Set mode: synthetic in config.yaml
 #    to run the instant offline fixture instead.
 python -m src.pipeline
@@ -147,18 +147,32 @@ spans zero and we lean on the proxy anyway), `collinearity` (informational).
 `sensitivity.py` then asks whether our choices moved the shortlist, on three
 axes, each scored against the shipped configuration's top-100:
 
-| Axis | What varies | England & Wales result |
-|---|---|---|
-| **Alternative weightings** | declared vs equal vs the three fitted schemes | **0.46** worst (multivariable) — ⚠️ below the 0.70 threshold |
-| **CI envelope** | weights drawn from the LA fit's confidence intervals | 0.84 mean over 200 draws — ok |
-| **Supply constants** | travel/catchment split, 5×3 sweep | 0.74 worst — ok |
+| Axis | What varies | Decision set held | Shortlist overlap |
+|---|---|---|---|
+| **Alternative weightings** | declared vs equal vs the three fitted schemes | **100%** | 63–92% |
+| **CI envelope** | weights drawn from the LA fit's confidence intervals | **100%** | 91% mean |
+| **Supply constants** | travel/catchment split, 5×3 sweep | **100%** | 83–100% |
 
-**Findings.** The shortlist is *not* robust to the choice of weighting, and the
-tool says so on the map face and in the PDF rather than burying it. It **is**
-robust to the supply constants — which is the opposite of what we expected,
-since the supply surface gates the shortlist hardest (most of the per-capita top
-100 sits in the bottom decile of supply). Thresholds are set from what the number
-means for the decision, not tuned until the data passes.
+**What "held" means.** Set membership is a poor test — an area at rank 101 versus
+99 flips in and out of a shortlist without changing any decision. So the verdict
+measures **displacement**: of the top 20 areas (the ones you would actually act
+on), how many stay inside the top 100 under an alternative configuration? All of
+them do, under all 20 configurations tested; the furthest any fell was rank 70.
+
+**Note on the overlap column:** it is the *share* of the top-100 retained, not
+Jaccard. For equal-sized sets `Jaccard = overlap / (2 − overlap)`, so 63% overlap
+reads as Jaccard 0.46 — a conflation that once set this bar 12 points too high.
+
+**Tiers, not ranks.** Because the *order* is far less certain than the
+*membership*, `fact_tier.parquet` bands every area: **shortlist** (top 100 under
+every configuration — 47 areas), **in contention** (under some — 133), or
+outside. The map and the PDF show the tier and the rank range each area spans.
+Within a tier, treat areas as jointly prioritised and let local judgement decide.
+
+The one dimension that does move the shortlist is **how much weight occupation
+carries** (0.35 declared vs ~0.62 under the fitted schemes). That is a domain
+question — is it measuring need, or "working-class male area"? — not one more
+fitting will answer.
 
 `sensitivity.json` records per-area robustness and low-confidence flags; the app
 and the PDF surface both. Treat the output as a **shortlist for local judgement**,

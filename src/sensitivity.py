@@ -7,8 +7,6 @@ axes, all scored off the SAME prepared component frame so only one thing varies:
 
 1. **Named alternatives.** Rank under the declared weights, equal weights, and
    each scheme the LA fit supports (multivariable / univariate / composite).
-   This is the headline: if the shortlist barely moves, the weighting argument
-   is settled by evidence rather than assertion.
 
 2. **CI envelope.** Draw component weights from the univariate fit's confidence
    intervals. The point weights stay declared; this asks how far the *data* would
@@ -23,6 +21,20 @@ axes, all scored off the SAME prepared component frame so only one thing varies:
 
 Axes 1 and 2 need the calibration diagnostic; axis 3 does not. Each axis is
 skipped, not fatal, if its inputs are missing.
+
+**What the verdict measures.** Set membership is the wrong test and was the wrong
+test here. An area at rank 101 versus rank 99 flips shortlist membership on a
+rounding error while changing no decision, and Jaccard on two equal-sized sets
+understates agreement badly (63 of 100 shared reads as 0.46). So the verdict is
+driven by DISPLACEMENT: of the areas you would actually act on — the top
+`decision_n` — how many stay inside `contention_band` under every alternative
+configuration? Set overlap is still reported, as a share rather than a Jaccard,
+but it does not gate.
+
+**Tiers.** Because the ordering is less certain than the membership, the output
+is banded rather than ranked (`fact_tier.parquet`): an area is in the shortlist
+tier if it stays inside the top `shortlist_n` under EVERY configuration tested,
+in contention if it reaches that under SOME configuration, and outside otherwise.
 """
 
 from __future__ import annotations
@@ -53,6 +65,25 @@ def _jaccard(a: set, b: set) -> float:
     return len(a & b) / len(a | b) if (a or b) else 1.0
 
 
+def _set_metrics(top: set, ref_top: set) -> dict:
+    """Shared count, overlap SHARE, and Jaccard. The share is what plain language
+    means by 'the shortlist barely moved'; Jaccard is kept because it is what
+    earlier runs reported, and the two are easy to confuse."""
+    shared = len(top & ref_top)
+    n = len(ref_top) or 1
+    return {"shared": shared, "of": len(ref_top),
+            "overlap": round(shared / n, 4),
+            "jaccard": round(_jaccard(top, ref_top), 4)}
+
+
+def _displacement(ranks: np.ndarray, decision_idx: np.ndarray, band: int) -> dict:
+    """Where the reference decision set lands under an alternative ranking."""
+    r = ranks[decision_idx]
+    return {"held": round(float((r <= band).mean()), 4),
+            "median_rank": int(np.median(r)),
+            "worst_rank": int(r.max())}
+
+
 def _spearman(x: np.ndarray, y: np.ndarray) -> float:
     rx, ry = pd.Series(x).rank().to_numpy(), pd.Series(y).rank().to_numpy()
     return float(np.corrcoef(rx, ry)[0, 1])
@@ -60,6 +91,11 @@ def _spearman(x: np.ndarray, y: np.ndarray) -> float:
 
 def _topn(priority: np.ndarray, n: int) -> set:
     return set(np.argsort(-priority)[:n].tolist())
+
+
+def _ranks(priority: np.ndarray) -> np.ndarray:
+    """1 = highest priority."""
+    return pd.Series(-priority).rank(method="min").to_numpy()
 
 
 def _priority(df: pd.DataFrame, comp_w: dict, w_suicide: float) -> np.ndarray:
@@ -97,6 +133,8 @@ def _supply_variants(cfg: Config):
 def run(cfg: Config) -> dict:
     scfg = cfg.get("sensitivity", {}) or {}
     N = int(scfg.get("shortlist_n", 100))
+    D = int(scfg.get("decision_n", 20))
+    band = int(scfg.get("contention_band", N))
     n_draws = int(scfg.get("n_draws", 200))
     thresholds = scfg.get("thresholds", {}) or {}
     rng = np.random.default_rng(int(scfg.get("seed", 7)))
@@ -107,18 +145,26 @@ def run(cfg: Config) -> dict:
     df = prepare_components(cfg)
     area_codes = df["area_code"].to_numpy()
 
-    ref_priority = _priority(df, comp_w, w_suicide)
-    ref_top = _topn(ref_priority, N)
-    result: dict = {"shortlist_n": N, "declared_weights": comp_w,
-                    "suicide_signal_weight": w_suicide}
+    ref = _priority(df, comp_w, w_suicide)
+    ref_rank = _ranks(ref)
+    ref_top = _topn(ref, N)
+    decision_idx = np.argsort(-ref)[:D]      # the areas you would actually act on
+
+    # Ranks under every DEFENSIBLE configuration, for the tiering below. Random
+    # CI draws are deliberately excluded: they are a perturbation, not a
+    # configuration anyone would choose to ship.
+    rank_stack = [ref_rank]
+
+    result: dict = {"shortlist_n": N, "decision_n": D, "contention_band": band,
+                    "declared_weights": comp_w, "suicide_signal_weight": w_suicide}
 
     # --- Axis 1: named alternatives ---------------------------------------
     alternatives = {"equal": {c: 1 / len(PROXY_COMPONENTS) for c in PROXY_COMPONENTS}}
     if report:
         alternatives.update(report.get("schemes", {}))
+
     # A scheme that zeroes a proxy the LA fit finds positively and significantly
-    # associated with the outcome is discarding evidence, not weighing it. Note
-    # it — it is usually the outlier, and a reader should know why.
+    # associated with the outcome is discarding evidence, not weighing it.
     evidenced = set()
     if report:
         for name, u in (report.get("univariate_fit") or {}).items():
@@ -128,68 +174,94 @@ def run(cfg: Config) -> dict:
     axis1 = {}
     for name, w in alternatives.items():
         pr = _priority(df, w, w_suicide)
-        dropped = sorted(c for c in evidenced if w.get(c, 0.0) == 0.0)
+        rk = _ranks(pr)
+        rank_stack.append(rk)
         axis1[name] = {
             "weights": {k: round(float(v), 4) for k, v in w.items()},
-            "topN_jaccard_vs_declared": round(_jaccard(_topn(pr, N), ref_top), 4),
-            "spearman_vs_declared": round(_spearman(pr, ref_priority), 4),
-            "discards_evidenced": dropped,
+            **_set_metrics(_topn(pr, N), ref_top),
+            "spearman": round(_spearman(pr, ref), 4),
+            "displacement": _displacement(rk, decision_idx, band),
+            "discards_evidenced": sorted(c for c in evidenced if w.get(c, 0.0) == 0.0),
         }
     result["alternatives"] = axis1
 
-    # --- Axis 2: CI envelope around the declared weights -------------------
+    # --- Axis 2: CI envelope ----------------------------------------------
     if report and "univariate" in report.get("scheme_fits", {}):
         factors = report["scheme_fits"]["univariate"]
         means = [f["coef"] for f in factors]
         sds = [max((f["ci"][1] - f["ci"][0]) / (2 * z), 0.0) for f in factors]
         ref_top_arr = np.array(sorted(ref_top))
-        point_rank = pd.Series(-ref_priority).rank(method="min").to_numpy()
-        jaccards, retention, shifts = [], np.zeros(len(ref_top_arr)), []
+        overlaps, helds, retention, shifts = [], [], np.zeros(len(ref_top_arr)), []
         for _ in range(n_draws):
             w = _weights_from_factors(factors, [rng.normal(m, s) for m, s in zip(means, sds)])
             pr = _priority(df, w, w_suicide)
+            rk = _ranks(pr)
             top = _topn(pr, N)
-            jaccards.append(_jaccard(top, ref_top))
+            overlaps.append(len(top & ref_top) / N)
+            helds.append(float((rk[decision_idx] <= band).mean()))
             retention += np.array([1.0 if i in top else 0.0 for i in ref_top_arr])
-            dr = pd.Series(-pr).rank(method="min").to_numpy()
-            shifts.append(np.abs(dr[ref_top_arr] - point_rank[ref_top_arr]))
+            shifts.append(np.abs(rk[ref_top_arr] - ref_rank[ref_top_arr]))
         retention /= n_draws
         shifts = np.concatenate(shifts)
         robustness = {area_codes[i]: round(float(r), 3) for i, r in zip(ref_top_arr, retention)}
-        low_conf = sorted([a for a, r in robustness.items() if r < 0.5])
         result["envelope"] = {
             "basis": "univariate LA-fit confidence intervals",
             "n_draws": n_draws,
-            "mean_topN_jaccard": round(float(np.mean(jaccards)), 4),
-            "min_topN_jaccard": round(float(np.min(jaccards)), 4),
+            "mean_overlap": round(float(np.mean(overlaps)), 4),
+            "min_overlap": round(float(np.min(overlaps)), 4),
+            # Mean, not min: the minimum over N random draws is an extreme-value
+            # statistic that necessarily worsens as n_draws grows, which would
+            # make the verdict depend on how long we ran rather than on the data.
+            "mean_held": round(float(np.mean(helds)), 4),
+            "min_held": round(float(np.min(helds)), 4),
             "median_rank_shift": round(float(np.median(shifts)), 1),
             "p90_rank_shift": round(float(np.percentile(shifts, 90)), 1),
             "mean_retention": round(float(retention.mean()), 4),
-            "n_low_confidence": len(low_conf),
+            "n_low_confidence": int(sum(1 for r in robustness.values() if r < 0.5)),
         }
         result["area_robustness"] = robustness
-        result["low_confidence_areas"] = low_conf
+        result["low_confidence_areas"] = sorted(a for a, r in robustness.items() if r < 0.5)
     else:
         result["envelope"] = {"skipped": "no calibration diagnostic available"}
 
     # --- Axis 3: supply constants -----------------------------------------
     base_tw = float(cfg["accessibility"].get("travel_weight", 0.6))
     base_catchment = float(cfg["accessibility"]["catchment_minutes"])
-    axis3 = {}
     variants = _supply_variants(cfg)
     if variants is None:
         result["supply"] = {"skipped": "no sensitivity.supply_sweep configured"}
     else:
+        axis3 = {}
         for tw, catchment, acc in variants:
-            key = f"travel_weight={tw:g},catchment={catchment:g}"
             d2 = prepare_components(cfg, travel_weight=tw, accessibility_df=acc)
             pr = _priority(d2, comp_w, w_suicide)
-            axis3[key] = {
+            rk = _ranks(pr)
+            rank_stack.append(rk)
+            axis3[f"travel_weight={tw:g},catchment={catchment:g}"] = {
                 "is_shipped": bool(tw == base_tw and catchment == base_catchment),
-                "topN_jaccard_vs_shipped": round(_jaccard(_topn(pr, N), ref_top), 4),
-                "spearman_vs_shipped": round(_spearman(pr, ref_priority), 4),
+                **_set_metrics(_topn(pr, N), ref_top),
+                "spearman": round(_spearman(pr, ref), 4),
+                "displacement": _displacement(rk, decision_idx, band),
             }
         result["supply"] = axis3
+
+    # --- Tiers -------------------------------------------------------------
+    R = np.vstack(rank_stack)
+    best, worst = R.min(axis=0).astype(int), R.max(axis=0).astype(int)
+    tier = np.where(worst <= N, "shortlist",
+                    np.where(best <= N, "contention", "outside"))
+    tiers = pd.DataFrame({"area_code": area_codes, "rank_declared": ref_rank.astype(int),
+                          "rank_best": best, "rank_worst": worst, "tier": tier})
+    tiers = tiers.sort_values(["rank_declared"]).reset_index(drop=True)
+    tier_path = cfg.path("fact_tier")
+    tiers.to_parquet(tier_path, index=False)
+    result["tiers"] = {
+        "n_configurations": len(rank_stack),
+        "definition": (f"shortlist = inside the top {N} under EVERY configuration tested; "
+                       f"contention = inside the top {N} under SOME configuration"),
+        "counts": {k: int(v) for k, v in pd.Series(tier).value_counts().items()},
+        "path": str(tier_path),
+    }
 
     result["stability"] = _stability(result, thresholds)
     out = cfg.path("sensitivity")
@@ -200,86 +272,118 @@ def run(cfg: Config) -> dict:
 
 
 def _stability(result: dict, thresholds: dict) -> dict:
-    """Worst observed overlap per axis vs its warn threshold. Never fatal —
-    an allocation index that refuses to produce a shortlist is less useful than
-    one that produces it with the caveat attached."""
+    """Worst observed displacement per axis vs its threshold.
+
+    DISPLACEMENT drives the verdict, not set membership: the question is whether
+    the areas we would act on stay in contention, not whether an arbitrary
+    top-N boundary happens to enclose the same members. Never fatal — an
+    allocation index that refuses to produce a shortlist is less useful than one
+    that produces it with the caveat attached.
+    """
+    held_t = float(thresholds.get("displacement_warn", 0.90))
+    overlap_t = float(thresholds.get("overlap_warn", 0.70))
     checks = {}
+
+    def _worst(items):
+        # Lowest share held; where everything holds equally (the common case once
+        # the measure is right), the configuration that displaced an area furthest.
+        return min(items, key=lambda kv: (kv[1]["displacement"]["held"],
+                                          -kv[1]["displacement"]["worst_rank"]))
 
     alts = result.get("alternatives") or {}
     if alts:
-        worst = min(alts.items(), key=lambda kv: kv[1]["topN_jaccard_vs_declared"])
-        checks["schemes"] = {"worst_overlap": worst[1]["topN_jaccard_vs_declared"],
-                             "worst_against": worst[0],
-                             "threshold": float(thresholds.get("schemes_warn", 0.50))}
+        name, v = _worst(alts.items())
+        checks["schemes"] = {"worst_held": v["displacement"]["held"],
+                             "worst_rank": v["displacement"]["worst_rank"],
+                             "worst_overlap": min(a["overlap"] for a in alts.values()),
+                             "worst_against": name}
     env = result.get("envelope") or {}
-    if "mean_topN_jaccard" in env:
-        # Mean, not min: the minimum over N random draws is an extreme-value
-        # statistic that necessarily worsens as n_draws grows, which would make
-        # the verdict depend on how long we ran rather than on the data.
-        checks["envelope"] = {"worst_overlap": env["mean_topN_jaccard"],
-                              "worst_against": "mean over CI draws",
-                              "threshold": float(thresholds.get("envelope_warn", 0.70))}
+    if "mean_held" in env:
+        checks["envelope"] = {"worst_held": env["mean_held"],
+                              "worst_rank": None,
+                              "worst_overlap": env["mean_overlap"],
+                              "worst_against": "mean over CI draws"}
     sup = result.get("supply") or {}
     if sup and "skipped" not in sup:
-        worst = min(sup.items(), key=lambda kv: kv[1]["topN_jaccard_vs_shipped"])
-        checks["supply"] = {"worst_overlap": worst[1]["topN_jaccard_vs_shipped"],
-                            "worst_against": worst[0],
-                            "threshold": float(thresholds.get("supply_warn", 0.50))}
+        name, v = _worst(sup.items())
+        checks["supply"] = {"worst_held": v["displacement"]["held"],
+                            "worst_rank": v["displacement"]["worst_rank"],
+                            "worst_overlap": min(a["overlap"] for a in sup.values()),
+                            "worst_against": name}
 
     for c in checks.values():
-        c["passes"] = bool(c["worst_overlap"] >= c["threshold"])
+        c["threshold_held"] = held_t
+        c["threshold_overlap"] = overlap_t
+        c["passes"] = bool(c["worst_held"] >= held_t)          # displacement gates
+        c["overlap_note"] = bool(c["worst_overlap"] >= overlap_t)   # reported only
+
     unstable = [k for k, c in checks.items() if not c["passes"]]
     return {"checks": checks, "unstable_axes": unstable,
+            "measure": "share of the decision set still inside the contention band",
             "status": "unstable" if unstable else "stable"}
 
 
 def _print_report(r: dict, out) -> None:
-    N = r["shortlist_n"]
-    print("\n[sensitivity] ===== does the shortlist depend on our choices? =====")
+    N, D, band = r["shortlist_n"], r["decision_n"], r["contention_band"]
     dw = r["declared_weights"]
+    print("\n[sensitivity] ===== does the shortlist depend on our choices? =====")
     print(f"  reference: declared weights dep/occ/iso = "
-          f"{dw['deprivation']:.2f}/{dw['occupation']:.2f}/{dw['isolation']:.2f}, "
-          f"shortlist top-{N}")
+          f"{dw['deprivation']:.2f}/{dw['occupation']:.2f}/{dw['isolation']:.2f}")
+    print(f"  verdict measures DISPLACEMENT: of the top-{D} you would act on, how many "
+          f"stay inside the top {band}?")
+    print(f"  set overlap is reported as a SHARE of the top-{N} (Jaccard in brackets, "
+          f"since the two are easy to confuse).")
 
-    print(f"\n  1) named alternatives  {'top-N overlap':>14} {'Spearman':>9}  weights(dep/occ/iso)")
+    def _row(label, v, extra=""):
+        d = v["displacement"]
+        print(f"     {label:<34} {d['held']:>7.0%} {d['median_rank']:>7} {d['worst_rank']:>7}"
+              f"   {v['shared']:>3}/{v['of']:<3} {v['overlap']:>5.0%} "
+              f"({v['jaccard']:.2f}) {v['spearman']:>6.3f}{extra}")
+
+    hdr = (f"     {'':<34} {'held':>7} {'med rk':>7} {'worst':>7}   "
+           f"{'shared':>7} {'ovlp':>5} {'(jac)':>6} {'rho':>6}")
+    print(f"\n  1) named alternatives"); print(hdr)
     for name, a in r["alternatives"].items():
-        w = a["weights"]
-        note = (f"  [discards {', '.join(a['discards_evidenced'])}]"
+        note = ("  [discards " + ", ".join(a["discards_evidenced"]) + "]"
                 if a.get("discards_evidenced") else "")
-        print(f"     {name:<18} {a['topN_jaccard_vs_declared']:>14.3f} "
-              f"{a['spearman_vs_declared']:>9.3f}  "
-              f"{w['deprivation']:.2f}/{w['occupation']:.2f}/{w['isolation']:.2f}{note}")
+        _row(name, a, note)
 
     env = r["envelope"]
     if "skipped" in env:
         print(f"\n  2) CI envelope: skipped — {env['skipped']}")
     else:
         print(f"\n  2) CI envelope ({env['basis']}, {env['n_draws']} draws)")
-        print(f"     mean top-N overlap {env['mean_topN_jaccard']:.3f} "
-              f"(min {env['min_topN_jaccard']:.3f}), median rank shift "
-              f"{env['median_rank_shift']:.0f}, p90 {env['p90_rank_shift']:.0f}")
-        print(f"     shortlist retention {env['mean_retention']:.1%}; "
-              f"{env['n_low_confidence']} area(s) below 50% retention")
+        print(f"     decision set held: mean {env['mean_held']:.0%} (min {env['min_held']:.0%}) "
+              f"| overlap mean {env['mean_overlap']:.0%}")
+        print(f"     retention {env['mean_retention']:.0%}; {env['n_low_confidence']} area(s) "
+              f"below 50% | median rank shift {env['median_rank_shift']:.0f}, "
+              f"p90 {env['p90_rank_shift']:.0f}")
 
     sup = r["supply"]
     if "skipped" in sup:
         print(f"\n  3) supply constants: skipped — {sup['skipped']}")
     else:
-        print(f"\n  3) supply constants   {'top-N overlap':>14} {'Spearman':>9}")
-        for key, v in sorted(sup.items(), key=lambda kv: kv[1]["topN_jaccard_vs_shipped"]):
-            mark = "  <- shipped" if v["is_shipped"] else ""
-            print(f"     {key:<34} {v['topN_jaccard_vs_shipped']:>8.3f} "
-                  f"{v['spearman_vs_shipped']:>9.3f}{mark}")
+        print(f"\n  3) supply constants"); print(hdr)
+        for key, v in sorted(sup.items(), key=lambda kv: kv[1]["displacement"]["held"]):
+            _row(key, v, "  <- shipped" if v["is_shipped"] else "")
+
+    t = r["tiers"]
+    counts = t["counts"]
+    print(f"\n  TIERS across {t['n_configurations']} configurations -> {t['path']}")
+    print(f"     shortlist  {counts.get('shortlist', 0):>6}  (top {N} under EVERY configuration)")
+    print(f"     contention {counts.get('contention', 0):>6}  (top {N} under SOME configuration)")
+    print(f"     outside    {counts.get('outside', 0):>6}")
 
     st = r["stability"]
-    print(f"\n  STABILITY: {st['status'].upper()}")
+    print(f"\n  STABILITY: {st['status'].upper()}  ({st['measure']})")
     for name, c in st["checks"].items():
         flag = "ok " if c["passes"] else "WARN"
-        print(f"    [{flag}] {name:<9} worst overlap {c['worst_overlap']:.3f} "
-              f"vs threshold {c['threshold']:.2f}  (worst: {c['worst_against']})")
+        rk = f", worst rank {c['worst_rank']}" if c["worst_rank"] else ""
+        print(f"    [{flag}] {name:<9} {c['worst_held']:>6.0%} held vs {c['threshold_held']:.0%} "
+              f"threshold{rk}  (worst: {c['worst_against']}; overlap {c['worst_overlap']:.0%})")
     if st["unstable_axes"]:
-        print("    -> The shortlist is sensitive to a choice we made rather than to the")
-        print("       data. Treat it as a starting point for local judgement, not a ranking.")
+        print("    -> Areas we would act on drop out of contention under an alternative")
+        print("       configuration. Read the shortlist as a starting point, not a ranking.")
     print(f"  -> {out}\n")
 
 

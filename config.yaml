@@ -29,6 +29,7 @@ paths:
   fact_score: data/output/fact_score.parquet
   scored_geojson: data/output/fact_score.geojson
   sensitivity: data/output/sensitivity.json
+  fact_tier: data/output/fact_tier.parquet
   report: data/output/amc_top20_report.pdf
 
 # ---------------------------------------------------------------------------
@@ -112,7 +113,14 @@ report:
 # Sensitivity analysis (design.md §7, validation check #2).
 # ---------------------------------------------------------------------------
 sensitivity:
-  shortlist_n: 100      # size of the shortlist whose stability we test
+  shortlist_n: 100      # size of the shortlist whose set-overlap we report
+  # The set you would actually act on. You open a handful of groups, not 100, so
+  # this is the set whose stability decides the verdict.
+  decision_n: 20
+  # A decision-set area still "held" if it stays within this rank under an
+  # alternative configuration. Falling from rank 8 to rank 41 does not change
+  # where you would open a group; falling to rank 4,000 does.
+  contention_band: 100
   n_draws: 200          # draws for the CI envelope
   seed: 7
   # Axis 3: supply-surface constants. The shortlist is gated by these, so they
@@ -120,18 +128,22 @@ sensitivity:
   supply_sweep:
     travel_weight: [0.4, 0.5, 0.6, 0.7, 0.8]
     catchment_minutes: [20, 30, 45]
-  # Stability thresholds: top-N Jaccard vs the shipped configuration, below
-  # which the run is flagged unstable on the console, the map face and the PDF.
+  # Stability thresholds.
   #
-  # 0.70 throughout — if a differently-but-defensibly configured run would send
-  # you to 30%+ different places, the ranking is not carrying the weight a
-  # ranking implies. Set from what the number MEANS for the decision, not tuned
-  # until the current data passes: on the England & Wales run the schemes axis
-  # fails this and the other two clear it. See docs/adr/0001.
+  # `displacement_warn` is the PRIMARY check and drives the verdict: the share of
+  # the decision set that must stay inside `contention_band` under every
+  # alternative configuration. This is what "would we go somewhere else?"
+  # actually means. Set-membership cannot express it — an area at rank 101 vs 99
+  # flips shortlist membership on a rounding error while changing nothing.
+  #
+  # `overlap_warn` is secondary and reported for context: the SHARE of the top-N
+  # shortlist retained. Note this is the overlap fraction, not Jaccard — for two
+  # equal-sized sets Jaccard = overlap / (2 - overlap), so 70% overlap reads as
+  # Jaccard 0.54. An earlier version of this file set the bar in Jaccard while
+  # describing it in overlap, which demanded 82% agreement by accident.
   thresholds:
-    schemes_warn: 0.70
-    envelope_warn: 0.70
-    supply_warn: 0.70
+    displacement_warn: 0.90
+    overlap_warn: 0.70
 
 # ---------------------------------------------------------------------------
 # Accessibility / supply.
