@@ -438,7 +438,7 @@ def main():
             frames.append(res)
             print(f"  {la:<22} {len(orig):4d} LSOAs x {len(grp):2d} groups  "
                   f"{time.time()-t0:5.1f}s  round-trip {res.round_trip_ok.mean():6.1%}"
-                  f"   ({(time.time()-t0)/max(len(grp),1):.2f}s per group)")
+                  f"   ({(time.time()-t0)/max(len(grp),1):.2f}s per group)", flush=True)
 
     out = pd.concat(frames, ignore_index=True)
     if score is not None:

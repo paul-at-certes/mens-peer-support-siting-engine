@@ -231,4 +231,83 @@ serves them.
 - **What journey a man will actually make on a Monday evening after work.** The
   parameter the answer is most sensitive to, and the one no dataset contains.
   This is a question for the charity, not for the pipeline.
-- **National extent.** Five LAs, chosen to span the range, not a sample.
+- ~~**National extent.** Five LAs, chosen to span the range, not a sample.~~
+  Answered by the addendum below — 27 LAs, 3,346 LSOAs — and the five-LA reading
+  did not survive it.
+
+## Addendum, 2026-08-31 — the national sample, and what it overturned
+
+The "Still open" bullet below asked for national extent. It was run: **27 local
+authorities, 3,346 LSOAs**, one per region × drive-time-tercile cell, seeded and
+stratified on the variable under test, spanning 5.5 min (Exeter) to 49.0 min
+(Powys) median drive across all ten regions. Feed coverage was checked first and
+is even — 97.8% of English and 96.1% of Welsh LSOA centroids have a stop within
+800 m — so Wales is measured, not assumed. Powys has no group within 45 km at
+all, so its 79 LSOAs are excluded from the bus comparison: they are unreachable
+for a reason that has nothing to do with buses.
+
+**The five-LA result did not generalise, and the error was mine.** All five sat
+in the East Midlands, four of them rural, and they shared one pattern. On the
+national sample the case that public transport merely restates the car surface
+falls over:
+
+| | 5 LAs (East Midlands) | 27 LAs (national) |
+|---|---|---|
+| corr(car minutes, robustly infeasible) | 0.765 | **0.614** |
+| corr(no-car share, feasible) | 0.664 | **0.415** |
+| areas where car and bus disagree | 6 of 411 (1.5%) | **447 of 3,267 (13.7%)** |
+| of those, inside the top-100 shortlist | 0 | **2** |
+
+The drive-time gradient is far flatter than the regional sample implied — the
+closest quartile is 3.3% infeasible and the furthest only 54.9%, against 0% and
+100% before. **Public transport carries real information the car surface does
+not.**
+
+**And the information is systematic, not noise.** Of the 340 areas the car
+surface calls poorly-served where the bus always works, 263 are Tower Hamlets
+(166) and Greenwich (97), with Wirral, Cardiff and Oxford behind them. These are
+dense urban areas where driving is slow *because* the place is dense, and where
+the transit that density pays for is invisible to a car-only surface. The
+correction runs the opposite way to the one this ADR anticipated: it does not
+promote rural areas the tool is missing, it **demotes urban areas whose unmet
+need the car surface overstates**. Of the ten sampled areas inside the top-100
+reach shortlist, five are comfortably reachable by bus (Oxford at ranks 4, 12 and
+98, Greenwich 21, Tower Hamlets 55) and four are not (Wiltshire 68 and 78, Boston
+75, Chorley 9).
+
+**What did not change is the objection that actually mattered.** Across the four
+acceptable-journey rules:
+
+| verdict | share of the 3,267 |
+|---|---|
+| served under **every** rule | 48.1% |
+| infeasible under **every** rule | 20.9% |
+| **depends on the assumption** | **30.9%** |
+
+Nearly a third of areas have no data-determined answer — worse than the 26.8% the
+regional sample showed, and it lands hardest where it matters most. Oxford holds
+rank 4 and is **88% contested**: its favourable verdict is almost entirely an
+artefact of assuming a man will travel far enough. Scoring that would move the
+top of the shortlist on a number nobody measured.
+
+**Where this leaves the decision.** The Decision above stands on every point
+except the reasoning in "Consequences" that the shortlist "may be reinforced" —
+nationally it would be *changed*, in a direction worth taking seriously. But the
+finding also suggests the shape that would be defensible, which this ADR did not
+previously see: **a three-valued flag — served / not served / uncertain — rather
+than a score.** Both robust categories are parameter-invariant by construction
+and together cover 69% of areas; the remaining 31% would be shown as uncertain
+rather than resolved by fiat. That exposes the value judgement instead of burying
+it in a percentile, which is the objection this ADR was built on.
+
+That is a product decision, not a modelling one, and it is not taken here. Rail
+remains a prerequisite for trusting any rural "not served" verdict — Wiltshire
+and Richmondshire, two of the most infeasible LAs in the sample, are exactly
+where a station would change the answer.
+
+Reproduce with:
+
+```bash
+python spikes/pt_evening_access.py --feed all --sweep \
+  --las "Boston|North Northamptonshire|Bolsover|Stevenage|South Cambridgeshire|Chelmsford|Greenwich|Tower Hamlets|Hammersmith and Fulham|County Durham|Northumberland|Wirral|Chorley|Oxford|Runnymede|Eastleigh|Wiltshire|East Devon|Exeter|Powys|Cardiff|Merthyr Tydfil|Rugby|Newcastle-under-Lyme|Coventry|Richmondshire|York"
+```
