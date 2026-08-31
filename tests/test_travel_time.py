@@ -64,3 +64,33 @@ def test_osrm_matrix_chunks_and_parses(monkeypatch):
     assert m[1, 1] == 2.0             # 120s -> 2 min
     assert m[2, 0] == 1.0             # 60s  -> 1 min
     assert calls == [(3, 2), (1, 2)]  # origins chunked 3 then 1
+
+
+def test_osrm_error_tells_the_two_failures_apart(monkeypatch, tmp_path):
+    """A stopped server and a clone with no graph need different instructions.
+
+    osrm-data/ is gitignored (8GB+, rebuildable), so "start the server, the graph
+    is in osrm-data/" is true on a machine that built one and false on a fresh
+    clone — where it sends the reader in a circle.
+    """
+    prov = travel_time.OSRMTravelTimeProvider("http://localhost:59999", timeout=1)
+
+    def _dead(*a, **k):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(fetch, "get", _dead)   # imported inside the method
+
+    graph = tmp_path / "osrm-data" / "great-britain-latest.osrm"
+    graph.parent.mkdir(parents=True)
+    graph.write_text("")
+    monkeypatch.setattr(travel_time, "OSRM_GRAPH", graph)
+    with pytest.raises(RuntimeError, match="already at"):
+        prov.matrix_minutes([(-0.1, 51.5)], [(-0.2, 51.6)])
+
+    monkeypatch.setattr(travel_time, "OSRM_GRAPH", tmp_path / "gone" / "x.osrm")
+    with pytest.raises(RuntimeError, match="no prepared graph"):
+        prov.matrix_minutes([(-0.1, 51.5)], [(-0.2, 51.6)])
+
+    # Either way the no-server escape hatch is offered.
+    with pytest.raises(RuntimeError, match="provider: haversine"):
+        prov.matrix_minutes([(-0.1, 51.5)], [(-0.2, 51.6)])

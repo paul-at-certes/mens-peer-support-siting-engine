@@ -21,6 +21,14 @@ import numpy as np
 
 _EARTH_RADIUS_KM = 6371.0088
 
+# The prepared OSRM graph. It is NOT in the repo — 8GB+ and rebuildable from an
+# OSM extract, so .gitignore excludes it. That makes "the server is stopped" and
+# "this clone has no graph to serve" two different problems needing two different
+# instructions, and the error below tells them apart rather than assuming the
+# first.
+OSRM_GRAPH = (Path(__file__).resolve().parent.parent
+              / "osrm-data" / "great-britain-latest.osrm")
+
 
 def haversine_km(lon1, lat1, lon2, lat2):
     """Vectorised great-circle distance in km. Inputs may be scalars or arrays."""
@@ -173,16 +181,27 @@ class OSRMTravelTimeProvider(TravelTimeProvider):
             detail = str(exc).split("\n")[0]
             if len(detail) > 160:
                 detail = detail[:160] + " ...[url truncated]"
+            if OSRM_GRAPH.exists():
+                fix = (f"  Start the routing server (the prepared graph is already at\n"
+                       f"  {OSRM_GRAPH}):\n"
+                       f"    docker run -d --name amc-osrm -p 5001:5000 \\\n"
+                       f"      -v \"$PWD/osrm-data:/data\" osrm/osrm-backend \\\n"
+                       f"      osrm-routed --algorithm mld --max-table-size 2000 \\\n"
+                       f"      /data/great-britain-latest.osrm\n"
+                       f"    (or: docker start amc-osrm, if you have run that before)\n")
+            else:
+                fix = (f"  There is no prepared graph at\n"
+                       f"  {OSRM_GRAPH}\n"
+                       f"  and there is none in the repo: it is 8GB+ and gitignored, so a\n"
+                       f"  fresh clone has nothing for the server to load. Build it from a\n"
+                       f"  Geofabrik great-britain-latest.osm.pbf extract first — see\n"
+                       f"  README, \"Real routing (OSRM)\" — or run without a server:\n")
             raise RuntimeError(
                 f"OSRM is configured (accessibility.provider: osrm) but "
                 f"{self.base_url} did not answer.\n"
                 f"  {type(exc).__name__}: {detail}\n"
-                f"  Start the routing server (the prepared graph lives in osrm-data/):\n"
-                f"    docker run -d --name amc-osrm -p 5001:5000 \\\n"
-                f"      -v \"$PWD/osrm-data:/data\" osrm/osrm-backend \\\n"
-                f"      osrm-routed --algorithm mld --max-table-size 2000 \\\n"
-                f"      /data/great-britain-latest.osrm\n"
-                f"  Or set accessibility.provider: haversine to run without a server "
+                + fix +
+                f"  Set accessibility.provider: haversine to run with no server at all "
                 f"(straight-line; wrong in both directions — see src/caveats.py)."
             ) from exc
         if data.get("code") != "Ok":
