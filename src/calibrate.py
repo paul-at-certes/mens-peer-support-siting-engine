@@ -4,7 +4,7 @@ The one hard constraint: suicide data is reliable only at Local Authority level.
 The original design fitted an LA-level model and promoted its coefficients to
 the scoring weights. That does not survive contact with the data:
 
-  * With ~292 LAs and three mutually collinear proxies (deprivation correlates
+  * With 331 LAs and three mutually collinear proxies (deprivation correlates
     0.72 with isolation and 0.63 with occupation at LA level) the model does not
     identify the weights. Deprivation comes out significantly *protective* in
     the multivariable fit — collinearity, not epidemiology.

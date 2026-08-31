@@ -179,10 +179,31 @@ def outvoted_note(cfg: Config) -> str:
         mark in its own breakdown, and the map can show them on their own. Read the
         mark as a statement about this ranking rather than about the place. It says
         the ranking cannot see the risk there — the best-placed of them sits
-        {_ordinal(rank.get('best_rank', 0))} of {total:,} and none reaches the
-        shortlist. It does not say a group should open there: being hard to reach is
-        a separate question, and some of the marked areas already have a group
-        nearby.""")
+        {_ordinal(rank.get('best_rank', 0))} of {total:,}{_shortlist_reach_clause(rank)}.
+        It does not say a group should open there: being hard to reach is a separate
+        question, and some of the marked areas already have a group nearby.""")
+
+
+def _shortlist_reach_clause(ranking: dict) -> str:
+    """Whether any flagged area reaches the shortlist, READ rather than asserted.
+
+    This clause used to be the flat words "and none reaches the shortlist". It
+    was true when written and nothing checked it thereafter, in a paragraph whose
+    every other figure is read from blind_spot.json. Silent when the run recorded
+    no cross-configuration answer: the sentence stands without it.
+    """
+    ac = (ranking.get("across_configurations") or {}).get("per_capita")
+    if not ac:
+        return ""
+    n_short, n_some = ac["n_shortlist_tier"], ac["n_reaching_under_some_config"]
+    if not n_some:
+        return " and not one of them reaches the shortlist under any configuration tested"
+    if not n_short:
+        return (f" and {n_some:,} of them "
+                f"{'reaches' if n_some == 1 else 'reach'} the shortlist under some "
+                f"configurations, though none under all of them")
+    return (f" and {n_short:,} of them "
+            f"{'does' if n_short == 1 else 'do'} reach the shortlist")
 
 
 def blind_spot_definition(cfg: Config) -> str:

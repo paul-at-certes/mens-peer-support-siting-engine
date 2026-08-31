@@ -188,7 +188,8 @@ def run(cfg: Config) -> pd.DataFrame:
         _build_real(cfg, path)
     src = require_file(
         path, "male working-age suicide by local authority",
-        "Nomis NM_161_1 (cause X60-X84 + Y10-Y34, gender Male, ages 15-64, geography TYPE464) "
+        "Nomis NM_161_1 (cause X60-X84 + Y10-Y34, gender Male, age 0 = all ages, "
+        "geography TYPE434) — all ages, not working age; see this module's docstring "
         "— https://www.nomisweb.co.uk/datasets/mortsa")
     df = validate_columns(read_csv(src), REQUIRED, "suicide_la").copy()
 

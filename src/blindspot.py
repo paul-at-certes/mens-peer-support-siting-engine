@@ -106,6 +106,27 @@ def flag(occupation_proxy, need_index) -> pd.Series:
     return ((occ >= OCCUPATION_INDEX_FLOOR) & (need < NEED_INDEX_CEILING)).to_numpy()
 
 
+def _across_configs(m: pd.DataFrame, prefix: str) -> dict | None:
+    """How the flagged set fares across every configuration, for one view.
+
+    The tier already carries the answer, so nothing is refitted here: an area is
+    "outside" precisely when it never reached the top N under any configuration
+    tested, and in the shortlist tier when it reached it under all of them
+    (sensitivity.py). Returns None when the tiers for this view are absent, so a
+    run without sensitivity reports "not measured" rather than "none".
+    """
+    tier_col, best_col = f"{prefix}tier", f"{prefix}rank_best"
+    if tier_col not in m.columns or m[tier_col].isna().all():
+        return None
+    counts = m[tier_col].value_counts()
+    n_short, n_cont = int(counts.get("shortlist", 0)), int(counts.get("contention", 0))
+    out = {"n_shortlist_tier": n_short,
+           "n_reaching_under_some_config": n_short + n_cont}
+    if best_col in m.columns and m[best_col].notna().any():
+        out["best_rank_any_config"] = int(m[best_col].min())
+    return out
+
+
 def summarise(df: pd.DataFrame) -> dict:
     """Describe the flagged set, given a scored frame carrying the flag column."""
     n = len(df)
@@ -134,6 +155,16 @@ def summarise(df: pd.DataFrame) -> dict:
         # nothing to name.
         "n_in_shortlist_tier": (int((m.get("tier") == "shortlist").sum())
                                 if "tier" in m.columns else None),
+        # The same claim, but across every configuration sensitivity.py tested,
+        # and per view. The copy on the map, in the guide and in the PDF used to
+        # ASSERT that none of these areas reaches the shortlist under any
+        # configuration; nothing here recorded it, so nothing checked it. It is
+        # measured now, for both views, because the PDF leads with reach and a
+        # per-capita answer says nothing about it.
+        "across_configurations": {
+            "per_capita": _across_configs(m, ""),
+            "reach": _across_configs(m, "reach_"),
+        },
     }
     out["profile"] = {
         "median_male_working_age_pop": int(m["male_working_age_pop"].median()),
@@ -162,8 +193,12 @@ def run(cfg: Config | None = None) -> dict:
                          "column. Re-run score.py.")
     tier_path = cfg.path("fact_tier")
     if tier_path.exists():
-        df = df.merge(pd.read_parquet(tier_path)[["area_code", "tier"]],
-                      on="area_code", how="left")
+        tiers = pd.read_parquet(tier_path)
+        # Both views' tiers, not just the per-capita one: the PDF leads with
+        # reach, and a tier from one ranking says nothing about the other.
+        cols = [c for c in ("area_code", "tier", "rank_best",
+                            "reach_tier", "reach_rank_best") if c in tiers.columns]
+        df = df.merge(tiers[cols], on="area_code", how="left")
     report = summarise(df)
 
     print("\n[blind-spot] ===== areas the need index cannot see =====")
@@ -174,6 +209,13 @@ def run(cfg: Config | None = None) -> dict:
         r, p = report["ranking"], report["profile"]
         print(f"  they rank at a median of {r['median_rank']:,}, best {r['best_rank']:,}; "
               f"{r['n_inside_top_100']} inside the top 100")
+        for view, ac in (r.get("across_configurations") or {}).items():
+            print(f"  across configurations ({view}): "
+                  + ("not measured — no tiers for this view" if ac is None else
+                     f"{ac['n_shortlist_tier']} in the shortlist tier, "
+                     f"{ac['n_reaching_under_some_config']} reaching it under some "
+                     f"configuration (best rank "
+                     f"{ac.get('best_rank_any_config', float('nan')):,})"))
         print(f"  median nearest group {p['median_travel_minutes']:.0f} min, supply "
               f"{p['median_supply_index']:.2f} against {p['all_areas_median_supply_index']:.2f} "
               f"for all areas"

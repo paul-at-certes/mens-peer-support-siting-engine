@@ -116,11 +116,17 @@ def _scores(df: pd.DataFrame, comp_w: dict, w_suicide: float):
     return np.asarray(priority), np.asarray(reach)
 
 
-def _supply_variants(cfg: Config):
-    """(travel_weight, catchment_minutes, accessibility_df) for the axis-3 sweep.
+def _supply_variants(cfg: Config) -> list | None:
+    """[(travel_weight, catchment_minutes, accessibility_df)] for the axis-3 sweep.
 
     Catchment variants need the travel matrix re-derived; the provider caches it
     where that is expensive, and the haversine default recomputes in seconds.
+
+    Returns a LIST, not a generator. It was written with a `yield` at the end and
+    a `return None` guard at the top, which makes the whole function a generator:
+    the guard silently produced an empty sequence instead of None, the caller's
+    `is None` branch was unreachable, and an unconfigured sweep was recorded as
+    an empty axis rather than a skipped one with a reason attached.
     """
     sweep = (cfg.get("sensitivity", {}) or {}).get("supply_sweep", {}) or {}
     tws = [float(t) for t in sweep.get("travel_weight", [])]
@@ -138,9 +144,9 @@ def _supply_variants(cfg: Config):
 
     frames = {c: accessibility.summarise(minutes, geo, prov, c)
               for c in sorted(set(catchments) | {base_catchment})}
-    for tw in sorted(set(tws) | {base_tw}):
-        for c in sorted(set(catchments) | {base_catchment}):
-            yield tw, c, frames[c]
+    return [(tw, c, frames[c])
+            for tw in sorted(set(tws) | {base_tw})
+            for c in sorted(set(catchments) | {base_catchment})]
 
 
 def run(cfg: Config) -> dict:

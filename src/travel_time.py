@@ -6,8 +6,13 @@ API is swapped in later behind the same interface without touching any
 downstream code. Provision changes rarely, so the real implementations are
 expected to precompute and cache the matrix.
 
-Straight-line distance OVER-states accessibility in rural/estuarine geographies
-— this caveat is surfaced on the map face until real routing lands.
+Real routing has landed and OSRM is the shipped default (config.yaml
+`accessibility.provider`). Measured against it on this data, the haversine stub
+is wrong in BOTH directions: it under-states typical journeys (median nearest
+group 10.2 minutes against 13.8 by road) and over-states the worst of them
+(41.4 at the 90th percentile against 35.1), because a flat speed ignores
+motorways. The map face and the PDF describe whichever provider actually
+produced the numbers — see src/caveats.py `travel_note`.
 """
 
 from __future__ import annotations

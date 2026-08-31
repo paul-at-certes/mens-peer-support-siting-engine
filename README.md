@@ -35,7 +35,7 @@ real sources swap in one at a time behind the same interfaces.
   **checked** at Local-Authority level (Poisson/NegBin regression of pooled male
   suicide counts on the aggregated proxies, at-risk population offset), then
   applied to small-area proxies. The fit vetoes any weight the data contradicts;
-  it does not supply one, because with ~292 LAs and three collinear proxies it
+  it does not supply one, because with 331 LAs and three collinear proxies it
   cannot identify them ([ADR 0001](docs/adr/0001-calibration-as-veto.md)). No
   small-area suicide rate is ever fabricated.
 - **Within-nation normalisation** — IMD/WIMD/SIMD aren't comparable across
@@ -157,7 +157,7 @@ caveats. In brief:
 |---|---|
 | Spine + centroids | ONS Open Geography Portal (ArcGIS REST), LSOA 2021 |
 | Population (male 16–64) | Nomis Census 2021 RM121 |
-| Occupation | Nomis Census 2021 RM107 (SOC major groups 5/8/9, male) |
+| Occupation | Nomis Census 2021 RM107 (LSOA male shares by SOC major group) + ONS custom dataset API (MSOA male sub-major mix) + ONS suicide-by-occupation SMRs |
 | Isolation | Nomis Census 2021 RM074 (marital) + TS003 (one-person households) |
 | Deprivation | IMD 2019 (England scores) + WIMD 2019 (Wales ranks), LSOA 2011→2021 |
 | Suicide signal | Nomis NM_161_1 / ONS registrations (male, all ages, X60-X84 + Y10-Y34, 5-yr pooled, England & Wales) |
@@ -170,8 +170,15 @@ Key real-data honesty notes (also surfaced on the map face):
   working-age-band granularity loses ~52% of deaths. All ages recovers 96.6% —
   measured, see [ADR 0001](docs/adr/0001-calibration-as-veto.md). The proxies are
   working-age measures, so the outcome is broader than the population targeted.
-- **Occupation is SOC major-group, residence-based**; **living-alone** is a
-  one-person-household share (no sex-broken figure exists at LSOA).
+- **Occupation is an SMR-weighted composition index, residence-based.** Each of
+  the 26 SOC-2020 sub-major groups is weighted by the male suicide rate actually
+  recorded for it (ONS 2011–2015, England, SOC 2010), so elementary trades count
+  for roughly three times the average and corporate managers under a third. The
+  sub-major mix is only published at MSOA, so neighbourhoods within one MSOA
+  share an answer for *which* trades their men do and differ only in how many —
+  see `src/ingest/occupation.py` and `occupational-risk-layer-spec.md`.
+  **Living-alone** is a one-person-household share (no sex-broken figure exists
+  at LSOA).
 - **Travel time is car-only.** Public transport is not modelled, and that bites
   hardest exactly where this tool points: about one household in four in England
   and Wales has no car or van, rising above 50% in some of the shortlisted areas.
@@ -187,8 +194,10 @@ Key real-data honesty notes (also surfaced on the map face):
   `spikes/pt_evening_access.py`.
 - **Travel time uses real road routing** via self-hosted OSRM
   (`accessibility.provider: osrm`, the shipped default — see below). The
-  dependency-free haversine stub remains available for a run with no server, and
-  over-states rural access.
+  dependency-free haversine stub remains available for a run with no server. It
+  is wrong in *both* directions, not just one — it under-states typical journeys
+  and over-states the worst of them, because a flat speed ignores motorways. The
+  table under "Real routing" below has the measured figures.
 
 ### Real routing (OSRM) — the shipped default
 
