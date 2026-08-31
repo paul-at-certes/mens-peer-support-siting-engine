@@ -24,6 +24,7 @@ file X here" message if a (non-automatable) source is ever missing.
 | WIMD 2019 (Wales) | `ingest/deprivation.py` | gov.wales domain **ranks** ODS | LSOA **2011** | income + employment **ranks** (different scale → within-nation percentile) |
 | LSOA 2011 → 2021 crosswalk | `ingest/deprivation.py` | ONS Geo Portal `LSOA11_LSOA21_LAD22_EW_LU_v5` | — | brings IMD/WIMD (2011) onto 2021; split=copy, merge=average |
 | Suicide by LA | `ingest/suicide_la.py` | Nomis API `NM_161_1` (ONS registrations), geography `TYPE434` | LA × cause × sex × age × year | **male, all ages, X60-X84 + Y10-Y34, 5-yr pooled, England & Wales**; denominator is `male_pop` from the population spine |
+| Car or van availability | `ingest/car_access.py` | Nomis `NM_2063_1` (Census 2021 TS045) | LSOA 2021 | no-car **households** ÷ all households; **descriptive context only — never enters a score** |
 | AMC group locations | `ingest/provision.py` | Andy's Man Club WP Store Locator (`admin-ajax.php`) | point | grid-harvested + deduped (~360 groups) |
 
 ## Manual / not-yet-automated sources
@@ -39,6 +40,14 @@ file X here" message if a (non-automatable) source is ever missing.
   breakdown in either count table.
 - **OHID Fingertips 41001** — the previous source; England-only, age 10+, 3-year
   pooled. Retained as an optional cross-check on the LA signal, per the brief.
+- **Public transport travel time** — not modelled. Travel time is car-only.
+  `ingest/car_access.py` is the groundwork: it records the share of households
+  with no car or van per LSOA, so the map and the PDF can flag where the drive
+  time overstates access. Modelling the journey itself is a separate, larger
+  piece of work — it needs a time-of-day parameter on `TravelTimeProvider`,
+  round-trip feasibility (the last bus home is usually the binding constraint
+  for an evening session) and a local routing engine such as R5 for the
+  35,672 × 354 matrix.
 - If you ever switch to manually-downloaded files, drop them in `data/raw/real/`
   under the filename the adapter expects (it prints the path on failure) and
   record the URL + vintage here.

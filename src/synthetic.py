@@ -58,7 +58,7 @@ def generate(cfg, out_dir: Path) -> dict[str, Path]:
     la_latent = rng.normal(0, 1.0, n_las)
 
     geo_rows, pop_rows = [], []
-    dep_rows, occ_rows, iso_rows = [], [], []
+    dep_rows, occ_rows, iso_rows, car_rows = [], [], [], []
 
     area_counter = 0
     # Accumulators for LA-level suicide generation.
@@ -129,6 +129,20 @@ def generate(cfg, out_dir: Path) -> dict[str, Path]:
                 "one_person_household_pct": round(one_person, 4),
             })
 
+            # Car or van availability. Descriptive context only — it never
+            # enters a score (see ingest/car_access.py) — but it tracks latent
+            # need, as it does in reality: the areas the tool shortlists are the
+            # ones where car ownership is lowest and the drive time flatters
+            # access most.
+            households = int(total_pop / 2.3)
+            no_car_share = float(np.clip(0.22 + 0.09 * latent + rng.normal(0, 0.04),
+                                         0.01, 0.95))
+            car_rows.append({
+                "area_code": area_code,
+                "households": households,
+                "no_car_households": int(round(no_car_share * households)),
+            })
+
             la_latent_popw[li] += latent * male_wa_pop
             la_pop[li] += male_wa_pop
             area_counter += 1
@@ -180,6 +194,7 @@ def generate(cfg, out_dir: Path) -> dict[str, Path]:
         "deprivation": (pd.DataFrame(dep_rows), "deprivation.csv"),
         "occupation": (pd.DataFrame(occ_rows), "occupation.csv"),
         "isolation": (pd.DataFrame(iso_rows), "isolation.csv"),
+        "car_access": (pd.DataFrame(car_rows), "car_access.csv"),
         "suicide_la": (pd.DataFrame(suicide_rows), "suicide_la.csv"),
         "provision": (pd.DataFrame(provision_rows), "provision.csv"),
     }

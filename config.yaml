@@ -42,6 +42,8 @@ vintages:
   census: "Census 2021 (England & Wales, Nomis)"
   population: "Census 2021 usual residents by sex & age (Nomis RM121)"
   provision: "Andy's Man Club group finder (live harvest via WP Store Locator)"
+  car_access: "Census 2021 car or van availability (Nomis TS045 / NM_2063_1), LSOA 2021,
+               England & Wales — descriptive context only, never scored"
 
 # ---------------------------------------------------------------------------
 # Synthetic fixture — only used when mode == synthetic.
