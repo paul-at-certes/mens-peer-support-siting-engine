@@ -128,13 +128,19 @@ def build_reasoning(row: pd.Series, fb: dict, catchment_minutes: int) -> str:
     return driver + sig_clause + supply + reach
 
 
-def _tier_cell(area_code: str, tiers, labels: dict, fallback: str) -> str:
-    """Tier plus the rank range the area spans across tested configurations."""
+def _tier_cell(area_code: str, tiers, labels: dict, fallback: str,
+               prefix: str = "") -> str:
+    """Tier plus the rank range the area spans across tested configurations.
+
+    ``prefix`` selects the tier set matching the featured view — tiers are
+    computed per view, and a per-capita tier says nothing about the reach
+    ranking this report features by default.
+    """
     if len(tiers) and area_code in tiers.index:
         row = tiers.loc[area_code]
-        return (f"{labels.get(row['tier'], '—')}<br/>"
-                f"<font size=6 color='#777777'>rank {int(row['rank_best'])}–"
-                f"{int(row['rank_worst'])}</font>")
+        return (f"{labels.get(row[f'{prefix}tier'], '—')}<br/>"
+                f"<font size=6 color='#777777'>rank {int(row[f'{prefix}rank_best'])}–"
+                f"{int(row[f'{prefix}rank_worst'])}</font>")
     return fallback
 
 
@@ -174,6 +180,9 @@ def run(cfg: Config) -> "Path":  # type: ignore[name-defined]
     tier_path = cfg.path("fact_tier")
     tiers = (pd.read_parquet(tier_path).set_index("area_code")
              if tier_path.exists() else pd.DataFrame())
+    tier_prefix = "" if view == "per_capita" else "reach_"
+    if len(tiers) and f"{tier_prefix}tier" not in tiers.columns:
+        tier_prefix = ""      # tier file predates per-view tiers
     TIER_LABEL = {"shortlist": "Shortlist", "contention": "In contention",
                   "outside": "Outside"}
 
@@ -257,7 +266,8 @@ def run(cfg: Config) -> "Path":  # type: ignore[name-defined]
             Paragraph(f"{int(r['male_working_age_pop']):,}", cell),
             Paragraph(f"{r['priority_score']:.3f}", cell),
             Paragraph(f"{trav} min", cell),
-            Paragraph(_tier_cell(r["area_code"], tiers, TIER_LABEL, rob_label), cell),
+            Paragraph(_tier_cell(r["area_code"], tiers, TIER_LABEL, rob_label,
+                                 tier_prefix), cell),
         ])
     col_w = [8*mm, 45*mm, 34*mm, 42*mm, 16*mm, 17*mm, 16*mm, 24*mm]
     tbl = Table(data, colWidths=col_w, repeatRows=1)
@@ -279,7 +289,8 @@ def run(cfg: Config) -> "Path":  # type: ignore[name-defined]
         t = sens.get("tiers", {}) or {}
         story.append(Spacer(1, 4))
         story.append(Paragraph(
-            f"<b>Tier, not rank.</b> “Shortlist” areas sit inside the top "
+            f"<b>Tier, not rank.</b> Tiers are computed on the <b>{view}</b> ranking, "
+            f"the one featured here. “Shortlist” areas sit inside the top "
             f"{sens.get('shortlist_n', 100)} under <i>every</i> one of the "
             f"{t.get('n_configurations', '?')} configurations tested — alternative "
             "weightings, weights drawn from the range the Local-Authority fit supports, "

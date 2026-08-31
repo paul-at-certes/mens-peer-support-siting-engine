@@ -35,6 +35,10 @@ but it does not gate.
 is banded rather than ranked (`fact_tier.parquet`): an area is in the shortlist
 tier if it stays inside the top `shortlist_n` under EVERY configuration tested,
 in contention if it reaches that under SOME configuration, and outside otherwise.
+Tiers are computed separately for BOTH views — per-capita and reach — since a
+tier derived from one is meaningless about the other.
+
+Note the stability verdict itself is measured on the per-capita view only.
 """
 
 from __future__ import annotations
@@ -103,6 +107,15 @@ def _priority(df: pd.DataFrame, comp_w: dict, w_suicide: float) -> np.ndarray:
     return np.asarray(priority)
 
 
+def _scores(df: pd.DataFrame, comp_w: dict, w_suicide: float):
+    """(priority, reach) for one weighting. Both views are tiered, because both
+    are first-class in the brief and a tier computed on one says nothing about
+    the other — reach multiplies by population, so its leaders are frequently
+    mid-table per capita."""
+    _, priority, reach, _, _ = apply_weights(df, comp_w, w_suicide)
+    return np.asarray(priority), np.asarray(reach)
+
+
 def _supply_variants(cfg: Config):
     """(travel_weight, catchment_minutes, accessibility_df) for the axis-3 sweep.
 
@@ -145,8 +158,8 @@ def run(cfg: Config) -> dict:
     df = prepare_components(cfg)
     area_codes = df["area_code"].to_numpy()
 
-    ref = _priority(df, comp_w, w_suicide)
-    ref_rank = _ranks(ref)
+    ref, ref_reach = _scores(df, comp_w, w_suicide)
+    ref_rank, ref_reach_rank = _ranks(ref), _ranks(ref_reach)
     ref_top = _topn(ref, N)
     decision_idx = np.argsort(-ref)[:D]      # the areas you would actually act on
 
@@ -154,6 +167,7 @@ def run(cfg: Config) -> dict:
     # CI draws are deliberately excluded: they are a perturbation, not a
     # configuration anyone would choose to ship.
     rank_stack = [ref_rank]
+    reach_stack = [ref_reach_rank]
 
     result: dict = {"shortlist_n": N, "decision_n": D, "contention_band": band,
                     "declared_weights": comp_w, "suicide_signal_weight": w_suicide}
@@ -173,9 +187,10 @@ def run(cfg: Config) -> dict:
 
     axis1 = {}
     for name, w in alternatives.items():
-        pr = _priority(df, w, w_suicide)
+        pr, rch = _scores(df, w, w_suicide)
         rk = _ranks(pr)
         rank_stack.append(rk)
+        reach_stack.append(_ranks(rch))
         axis1[name] = {
             "weights": {k: round(float(v), 4) for k, v in w.items()},
             **_set_metrics(_topn(pr, N), ref_top),
@@ -234,9 +249,10 @@ def run(cfg: Config) -> dict:
         axis3 = {}
         for tw, catchment, acc in variants:
             d2 = prepare_components(cfg, travel_weight=tw, accessibility_df=acc)
-            pr = _priority(d2, comp_w, w_suicide)
+            pr, rch = _scores(d2, comp_w, w_suicide)
             rk = _ranks(pr)
             rank_stack.append(rk)
+            reach_stack.append(_ranks(rch))
             axis3[f"travel_weight={tw:g},catchment={catchment:g}"] = {
                 "is_shipped": bool(tw == base_tw and catchment == base_catchment),
                 **_set_metrics(_topn(pr, N), ref_top),
@@ -245,21 +261,30 @@ def run(cfg: Config) -> dict:
             }
         result["supply"] = axis3
 
-    # --- Tiers -------------------------------------------------------------
-    R = np.vstack(rank_stack)
-    best, worst = R.min(axis=0).astype(int), R.max(axis=0).astype(int)
-    tier = np.where(worst <= N, "shortlist",
-                    np.where(best <= N, "contention", "outside"))
-    tiers = pd.DataFrame({"area_code": area_codes, "rank_declared": ref_rank.astype(int),
-                          "rank_best": best, "rank_worst": worst, "tier": tier})
-    tiers = tiers.sort_values(["rank_declared"]).reset_index(drop=True)
+    # --- Tiers, per view ---------------------------------------------------
+    def _tier(stack, declared_rank):
+        R = np.vstack(stack)
+        best, worst = R.min(axis=0).astype(int), R.max(axis=0).astype(int)
+        return pd.DataFrame({
+            "rank_declared": declared_rank.astype(int),
+            "rank_best": best, "rank_worst": worst,
+            "tier": np.where(worst <= N, "shortlist",
+                             np.where(best <= N, "contention", "outside")),
+        })
+
+    per_capita = _tier(rank_stack, ref_rank)
+    reach = _tier(reach_stack, ref_reach_rank).add_prefix("reach_")
+    tiers = pd.concat([pd.DataFrame({"area_code": area_codes}), per_capita, reach], axis=1)
+    tiers = tiers.sort_values("rank_declared").reset_index(drop=True)
     tier_path = cfg.path("fact_tier")
     tiers.to_parquet(tier_path, index=False)
     result["tiers"] = {
         "n_configurations": len(rank_stack),
         "definition": (f"shortlist = inside the top {N} under EVERY configuration tested; "
                        f"contention = inside the top {N} under SOME configuration"),
-        "counts": {k: int(v) for k, v in pd.Series(tier).value_counts().items()},
+        "views": ["per_capita", "reach"],
+        "counts": {k: int(v) for k, v in tiers["tier"].value_counts().items()},
+        "reach_counts": {k: int(v) for k, v in tiers["reach_tier"].value_counts().items()},
         "path": str(tier_path),
     }
 
@@ -368,14 +393,16 @@ def _print_report(r: dict, out) -> None:
             _row(key, v, "  <- shipped" if v["is_shipped"] else "")
 
     t = r["tiers"]
-    counts = t["counts"]
     print(f"\n  TIERS across {t['n_configurations']} configurations -> {t['path']}")
-    print(f"     shortlist  {counts.get('shortlist', 0):>6}  (top {N} under EVERY configuration)")
-    print(f"     contention {counts.get('contention', 0):>6}  (top {N} under SOME configuration)")
-    print(f"     outside    {counts.get('outside', 0):>6}")
+    print(f"     {'':<11} {'per-capita':>11} {'reach':>8}")
+    for key, label in (("shortlist", "shortlist"), ("contention", "contention"),
+                       ("outside", "outside")):
+        print(f"     {label:<11} {t['counts'].get(key, 0):>11} "
+              f"{t['reach_counts'].get(key, 0):>8}")
+    print(f"     (shortlist = top {N} under EVERY configuration; contention = under SOME)")
 
     st = r["stability"]
-    print(f"\n  STABILITY: {st['status'].upper()}  ({st['measure']})")
+    print(f"\n  STABILITY: {st['status'].upper()}  ({st['measure']}, per-capita view)")
     for name, c in st["checks"].items():
         flag = "ok " if c["passes"] else "WARN"
         rk = f", worst rank {c['worst_rank']}" if c["worst_rank"] else ""

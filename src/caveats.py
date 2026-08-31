@@ -141,13 +141,18 @@ def assurance_notes(cfg: Config) -> list[dict]:
 
     tiers = sens.get("tiers") or {}
     if tiers:
-        c = tiers.get("counts", {})
+        c, rc = tiers.get("counts", {}), tiers.get("reach_counts", {})
+        reach_bit = (f" The reach view is tiered separately — {rc.get('shortlist', 0)} and "
+                     f"{rc.get('contention', 0)} — because reach multiplies by population, "
+                     f"so a tier from one ranking says nothing about the other."
+                     if rc else "")
         notes.append(_entry("How to read the tiers", f"""
-            {c.get('shortlist', 0)} areas are in the SHORTLIST tier — inside the top
-            {sens.get('shortlist_n')} under every one of the
+            {c.get('shortlist', 0)} areas are in the SHORTLIST tier on the per-capita
+            ranking — inside the top {sens.get('shortlist_n')} under every one of the
             {tiers.get('n_configurations')} configurations tested. A further
             {c.get('contention', 0)} are IN CONTENTION, reaching that under some
-            configurations but not all. Within a tier, treat the areas as jointly
-            prioritised: the evidence does not separate them, and local judgement —
-            venue, volunteers, partner appetite — should decide between them."""))
+            configurations but not all.{reach_bit} Within a tier, treat the areas as
+            jointly prioritised: the evidence does not separate them, and local
+            judgement — venue, volunteers, partner appetite — should decide between
+            them."""))
     return notes

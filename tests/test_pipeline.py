@@ -175,6 +175,21 @@ def test_tiers_band_the_output(tmp_path):
     assert (tiers["rank_declared"] <= tiers["rank_worst"]).all()
 
     n = sens["shortlist_n"]
+    # Both views are tiered, and independently: reach multiplies priority by
+    # population, so a per-capita tier says nothing about the reach ranking.
+    for prefix in ("", "reach_"):
+        assert set(tiers[f"{prefix}tier"]) <= {"shortlist", "contention", "outside"}
+        assert (tiers[f"{prefix}rank_best"] <= tiers[f"{prefix}rank_worst"]).all()
+        assert (tiers[f"{prefix}rank_best"] <= tiers[f"{prefix}rank_declared"]).all()
+        assert (tiers[f"{prefix}rank_declared"] <= tiers[f"{prefix}rank_worst"]).all()
+        band = tiers[tiers[f"{prefix}tier"] == "shortlist"]
+        assert (band[f"{prefix}rank_worst"] <= n).all()
+    assert sens["tiers"]["reach_counts"]["shortlist"] == int(
+        (tiers["reach_tier"] == "shortlist").sum())
+    # The declared reach ranking must match fact_score's own reach rank.
+    merged = tiers.merge(score[["area_code", "rank_reach"]], on="area_code")
+    assert (merged["reach_rank_declared"] == merged["rank_reach"]).all()
+
     shortlist = tiers[tiers.tier == "shortlist"]
     contention = tiers[tiers.tier == "contention"]
     outside = tiers[tiers.tier == "outside"]

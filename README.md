@@ -215,9 +215,21 @@ reads as Jaccard 0.46 — a conflation that once set this bar 12 points too high
 
 **Tiers, not ranks.** Because the *order* is far less certain than the
 *membership*, `fact_tier.parquet` bands every area: **shortlist** (top 100 under
-every configuration — 47 areas), **in contention** (under some — 133), or
-outside. The map and the PDF show the tier and the rank range each area spans.
-Within a tier, treat areas as jointly prioritised and let local judgement decide.
+every configuration tested), **in contention** (under some), or outside. The map
+and the PDF show the tier and the rank range each area spans. Within a tier,
+treat areas as jointly prioritised and let local judgement decide.
+
+Tiers are computed **separately for each view**, and the app and PDF show the set
+matching the ranking on screen. Reach multiplies priority by population, so its
+leaders are frequently mid-table per capita — a tier from one ranking says
+nothing about the other:
+
+| | per-capita | reach |
+|---|---|---|
+| shortlist | 54 | 58 |
+| in contention | 117 | 106 |
+
+(The stability verdict itself is measured on the per-capita view.)
 
 The one dimension that does move the shortlist is **how much weight occupation
 carries** (0.35 declared vs ~0.62 under the fitted schemes). That is a domain

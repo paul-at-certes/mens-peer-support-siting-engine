@@ -68,9 +68,7 @@ if not score_path.exists():
 df = load_scores(str(score_path)).copy()
 tiers = load_tiers(str(cfg.path("fact_tier")))
 if len(tiers):
-    df = df.merge(tiers[["area_code", "tier", "rank_best", "rank_worst"]],
-                  on="area_code", how="left")
-    df["tier_label"] = df["tier"].map(TIER_LABEL).fillna("③ Outside")
+    df = df.merge(tiers, on="area_code", how="left")
 groups = load_groups(str(cfg.path("interim") / "dim_provision.parquet"))
 weights_meta = load_json(str(cfg.path("weights")))
 sens = load_json(str(cfg.path("sensitivity")))
@@ -108,6 +106,14 @@ view = st.sidebar.radio(
          "male working-age population.",
 )
 score_col = "priority_score" if view.startswith("Per-capita") else "reach_score"
+# Tiers are computed per view: a tier derived from per-capita ranks says nothing
+# about the reach ranking, which multiplies by population. Select the matching
+# set so the table can never label a reach row with a per-capita tier.
+_tier_prefix = "" if score_col == "priority_score" else "reach_"
+if f"{_tier_prefix}tier" in df.columns:
+    for col in ("tier", "rank_best", "rank_worst"):
+        df[col] = df[f"{_tier_prefix}{col}"]
+    df["tier_label"] = df["tier"].map(TIER_LABEL).fillna("③ Outside")
 rank_col = "rank" if view.startswith("Per-capita") else "rank_reach"
 
 nations = sorted(df["nation"].unique())
@@ -279,12 +285,13 @@ with table_col:
     )
     st.caption("Select a row to ring that area on the map and load its breakdown.")
     if "tier" in ranked.columns:
+        _view_word = "per-capita" if score_col == "priority_score" else "reach"
         st.caption(
-            "**Tier, not rank.** ① areas sit inside the top "
-            f"{sens.get('shortlist_n', 100)} under *every* configuration tested; ② reach "
-            "it under *some*. The evidence separates the tiers; within a tier it does "
-            "not separate the areas, so treat them as jointly prioritised and let local "
-            "judgement decide."
+            f"**Tier, not rank** — computed on the **{_view_word}** ranking, the one "
+            f"shown. ① areas sit inside the top {sens.get('shortlist_n', 100)} under "
+            "*every* configuration tested; ② reach it under *some*. The evidence "
+            "separates the tiers; within a tier it does not separate the areas, so "
+            "treat them as jointly prioritised and let local judgement decide."
         )
 
 with detail_col:
