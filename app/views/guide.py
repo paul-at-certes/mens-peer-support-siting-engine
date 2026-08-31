@@ -95,8 +95,7 @@ with col_is:
     st.markdown(
         """
         - A way of narrowing thousands of neighbourhoods down to a shortlist, so a
-          conversation about where to open the next group starts from evidence
-          rather than from whoever argues hardest.
+          conversation about where to open the next group starts from evidence.
         - Built from public statistics, the kind anyone can download from a
           government website.
         - Explainable. Every area's score can be opened up to show which factors
