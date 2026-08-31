@@ -41,8 +41,17 @@ real sources swap in one at a time behind the same interfaces.
 - **Within-nation normalisation** — IMD/WIMD/SIMD aren't comparable across
   borders, so everything is percentile-ranked within nation. v1 ships
   **England & Wales**; Scotland/NI are documented stubs.
-- **Two views** — *per-capita* (`priority_score`) for acute pockets, and *reach*
-  (`priority_score × male_working_age_pop`) for the most men reached per group.
+- **Three views** — *per-capita* (`priority_score`) for acute pockets, *reach*
+  (`priority_score × male_working_age_pop`) for the most men reached per group,
+  and *remoteness*, which re-ranks the areas further from a major town or city
+  against each other on the same per-capita score. The third re-ranks a subset;
+  it re-scores nothing.
+- **Named blind spot** — areas whose occupational mix carries at least the
+  national-average male suicide risk while `need_index` still puts them in its
+  bottom half are flagged, wherever they rank. The weighting outvotes occupation
+  roughly two to one, so the ranking structurally cannot surface them; the flag
+  says so instead of leaving it as a caveat. Descriptive only — see
+  `src/blindspot.py`.
 - **Fully explainable** — every area carries a `factor_breakdown` JSON.
 
 ## Quick start
@@ -87,7 +96,7 @@ python -m src.report
 
 Two pages, routed from `app/streamlit_app.py`:
 
-- **🗺️ Priority map** — the ranked surface, both views, per-area breakdowns.
+- **🗺️ Priority map** — the ranked surface, all three views, per-area breakdowns.
 - **📖 Beginner's guide** — a plain-English explanation of what the tool is,
   where every dataset comes from, how the factors are combined and how the tiers
   are decided, written for a non-technical reader with no statistics background.
@@ -299,17 +308,18 @@ src/
   io_utils.py            # loud failures + schema validation
   geography.py           # spine: dim_geography + dim_population
   ingest/                # deprivation, occupation, isolation, car_access,
-                         #   suicide_la, provision
+                         #   remoteness, suicide_la, provision
                          #   + scotland_ni_stubs.py (documented stubs)
   travel_time.py         # TravelTimeProvider: haversine stub + OSRM/ORS stubs
   accessibility.py       # fact_accessibility (supply surface)
   calibrate.py           # LA-level GLM -> VETO on the declared weights -> weights.json
   caveats.py             # single source of the caveat/assurance copy (map + PDF)
   score.py               # need_index, supply_index, priority_score, factor_breakdown
+  blindspot.py           # the occupational blind-spot flag (descriptive; never scored)
   pipeline.py            # runs the whole thing
 app/
   streamlit_app.py       # entry point: routes the two pages below
-  views/priority_map.py  # map + two views + per-area breakdown + caveats
+  views/priority_map.py  # map + three views + per-area breakdown + caveats
   views/guide.py         # plain-English guide for non-technical readers
 data/{raw,interim,output}/
 tests/
@@ -321,11 +331,12 @@ tests/
 raw (downloaded / synthetic)
   → geography.py        → dim_geography, dim_population
   → ingest/*            → fact_deprivation, fact_occupation, fact_isolation,
-                          fact_car_access (context only), fact_suicide_la,
-                          dim_provision
+                          fact_car_access + fact_remoteness (context only),
+                          fact_suicide_la, dim_provision
   → calibrate.py        → weights.json   (LA-level veto; non-blocking)
   → accessibility.py    → fact_accessibility   (TravelTimeProvider)
   → score.py            → fact_score.parquet + .geojson   (need × (1 − supply))
+  → blindspot.py        → blind_spot.json   (what the need index cannot see)
   → app/views/          → map + guide
 ```
 

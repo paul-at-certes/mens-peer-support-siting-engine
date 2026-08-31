@@ -14,9 +14,10 @@ run, not end it.
 from __future__ import annotations
 
 from .config import Config, load_config
-from . import geography, calibrate, accessibility, score, sensitivity
+from . import (geography, blindspot, calibrate, accessibility,
+               occupation_diagnostic, score, sensitivity)
 from .ingest import (car_access, deprivation, occupation, isolation, provision,
-                     suicide_la)
+                     remoteness, suicide_la)
 from .synthetic import generate
 
 
@@ -26,7 +27,8 @@ def _ensure_synthetic(cfg: Config) -> None:
     # Every file the generator writes, so a fixture left over from before a new
     # source was added is regenerated rather than silently short one table.
     expected = ["geography.csv", "population.csv", "deprivation.csv", "occupation.csv",
-                "isolation.csv", "car_access.csv", "suicide_la.csv", "provision.csv"]
+                "isolation.csv", "car_access.csv", "remoteness.csv",
+                "suicide_la.csv", "provision.csv"]
     missing = [f for f in expected if not (out_dir / f).exists()]
     if missing:
         print(f"[pipeline] generating synthetic fixture in {out_dir} "
@@ -70,6 +72,11 @@ def run(cfg: Config | None = None) -> None:
     #     ranking, so a failed fetch must degrade the run rather than end it.
     _try("car access", car_access.run, cfg)
 
+    # 2c) Rural-Urban Classification — the axis the remoteness view cuts on.
+    #     Descriptive like car access, and non-blocking for the same reason: it
+    #     decides which areas a VIEW re-ranks, never what any area scores.
+    _try("remoteness", remoteness.run, cfg)
+
     # 3) Suicide signal + LA-level check on the declared weights (non-blocking)
     _try("suicide signal", suicide_la.run, cfg)
     _try("calibration", calibrate.run, cfg)
@@ -81,14 +88,28 @@ def run(cfg: Config | None = None) -> None:
     # 5) Score + factor breakdown + two views
     score.run(cfg)
 
+    # 5b) Does each factor carry information deprivation does not already have?
+    # Non-blocking and diagnostic: it reports on the declared weights, and
+    # nothing it computes can reach a rank.
+    _try("occupation diagnostic", occupation_diagnostic.run, cfg)
+
     # 6) Sensitivity analysis — is the shortlist robust to the weighting?
     sensitivity.run(cfg)
+
+    # 7) The occupational blind spot — how many areas does the need index
+    # structurally fail to see, and on what threshold? Reads the finished score,
+    # after sensitivity so it can also say whether any flagged area reached the
+    # shortlist tier (the claim the flag makes about itself).
+    _try("blind spot", blindspot.run, cfg)
 
     print("\n[pipeline] done. Outputs:")
     print(f"   {cfg.path('fact_score')}")
     print(f"   {cfg.path('scored_geojson')}")
     print(f"   {cfg.path('weights')}       (calibration diagnostic)")
+    print(f"   {cfg.path('output') / 'occupation_diagnostic.json'}   "
+          f"(factor independence)")
     print(f"   {cfg.path('sensitivity')}   (three-axis stability report)")
+    print(f"   {cfg.path('blind_spot')}      (occupational blind-spot flag)")
     print("\n   Launch the map with:  streamlit run app/streamlit_app.py")
 
 

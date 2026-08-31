@@ -29,7 +29,9 @@ paths:
   fact_score: data/output/fact_score.parquet
   scored_geojson: data/output/fact_score.geojson
   sensitivity: data/output/sensitivity.json
+  occupation_diagnostic: data/output/occupation_diagnostic.json
   fact_tier: data/output/fact_tier.parquet
+  blind_spot: data/output/blind_spot.json
   report: data/output/amc_top20_report.pdf
 
 # ---------------------------------------------------------------------------
@@ -40,8 +42,15 @@ vintages:
             5yr-pooled 2020-2024, England & Wales, 331 LAs"
   deprivation: "IMD 2019 (England, scores) / WIMD 2019 (Wales, ranks); LSOA 2011 -> 2021"
   census: "Census 2021 (England & Wales, Nomis)"
+  occupation: "Census 2021 occupation by sex - SOC-2020 major groups at LSOA (Nomis
+               RM107) refined by sub-major composition at MSOA (ONS custom dataset
+               API), weighted by male suicide SMRs from ONS 'Suicide by occupation:
+               England' 2011-2015, SOC 2010, ages 20-64"
   population: "Census 2021 usual residents by sex & age (Nomis RM121)"
   provision: "Andy's Man Club group finder (live harvest via WP Store Locator)"
+  remoteness: "ONS Rural-Urban Classification 2021 (RUC21), LSOA 2021, England &
+               Wales (Open Geography Portal LSOA21_RUC21_EW_LU) — descriptive context
+               only, never scored"
   car_access: "Census 2021 car or van availability (Nomis TS045 / NM_2063_1), LSOA 2021,
                England & Wales — descriptive context only, never scored"
   # Public transport is MEASURED, on a sample, and never scored. It is not an

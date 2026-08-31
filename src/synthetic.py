@@ -28,6 +28,23 @@ _LON_MIN, _LON_MAX = -4.5, 1.5
 _LAT_MIN, _LAT_MAX = 50.5, 54.5
 
 
+# RUC21 classes and their real England & Wales shares (35,672 LSOAs), so the
+# fixture's mix of settlement size x remoteness looks like the country's.
+_RUC_NAMES = {
+    "UN1": "Urban: Nearer to a major town or city",
+    "UF1": "Urban: Further from a major town or city",
+    "RLN1": "Larger rural: Nearer to a major town or city",
+    "RLF1": "Larger rural: Further from a major town or city",
+    "RSN1": "Smaller rural: Nearer to a major town or city",
+    "RSF1": "Smaller rural: Further from a major town or city",
+}
+_RUC_COUNTS = {"UN1": 27106, "UF1": 2451, "RLN1": 2127, "RLF1": 1021,
+               "RSN1": 1735, "RSF1": 1232}
+_RUC_CODES = list(_RUC_COUNTS)
+_RUC_SHARES = np.array([_RUC_COUNTS[c] for c in _RUC_CODES], dtype=float)
+_RUC_SHARES = _RUC_SHARES / _RUC_SHARES.sum()
+
+
 def _sigmoid(x: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-x))
 
@@ -58,7 +75,7 @@ def generate(cfg, out_dir: Path) -> dict[str, Path]:
     la_latent = rng.normal(0, 1.0, n_las)
 
     geo_rows, pop_rows = [], []
-    dep_rows, occ_rows, iso_rows, car_rows = [], [], [], []
+    dep_rows, occ_rows, iso_rows, car_rows, ruc_rows = [], [], [], [], []
 
     area_counter = 0
     # Accumulators for LA-level suicide generation.
@@ -110,10 +127,18 @@ def generate(cfg, out_dir: Path) -> dict[str, Path]:
                 "employment_domain": round(employment, 4),
             })
 
-            # High-risk male occupation share (0..~0.45).
+            # Male occupational composition. Two columns, because the real
+            # module produces both: the old major-group share, and the SMR-
+            # weighted composition index that replaced it. The index is centred
+            # near its identity value of 1.00 (an occupational mix carrying the
+            # national-average male suicide risk) so the blind-spot flag in
+            # src/blindspot.py, which cuts there, is on the same scale in the
+            # fixture as in the real run rather than silently never firing.
             occ_pct = float(np.clip(0.12 + 0.10 * latent + rng.normal(0, 0.03), 0.0, 0.5))
+            occ_index = float(np.clip(0.92 + 0.09 * latent + rng.normal(0, 0.04), 0.6, 1.6))
             occ_rows.append({
                 "area_code": area_code,
+                "occupation_proxy": round(occ_index, 4),
                 "male_high_risk_occ_pct": round(occ_pct, 4),
                 "male_high_risk_occ_count": int(round(occ_pct * male_wa_pop)),
             })
@@ -141,6 +166,20 @@ def generate(cfg, out_dir: Path) -> dict[str, Path]:
                 "area_code": area_code,
                 "households": households,
                 "no_car_households": int(round(no_car_share * households)),
+            })
+
+            # Rural-Urban Classification. Cosmetic: drawn from the real national
+            # class shares so the remoteness view has a plausible mix to re-rank
+            # and the pipeline runs with no network (rural-lens-spec.md 5.6). The
+            # fixture makes no attempt to reproduce the real correlation between
+            # remoteness and the proxies — it exists so the code path runs, not so
+            # the numbers mean anything.
+            ruc_code = str(rng.choice(_RUC_CODES, p=_RUC_SHARES))
+            ruc_rows.append({
+                "area_code": area_code,
+                "ruc21_code": ruc_code,
+                "ruc21_name": _RUC_NAMES[ruc_code],
+                "urban_rural_flag": "Urban" if ruc_code.startswith("U") else "Rural",
             })
 
             la_latent_popw[li] += latent * male_wa_pop
@@ -195,6 +234,7 @@ def generate(cfg, out_dir: Path) -> dict[str, Path]:
         "occupation": (pd.DataFrame(occ_rows), "occupation.csv"),
         "isolation": (pd.DataFrame(iso_rows), "isolation.csv"),
         "car_access": (pd.DataFrame(car_rows), "car_access.csv"),
+        "remoteness": (pd.DataFrame(ruc_rows), "remoteness.csv"),
         "suicide_la": (pd.DataFrame(suicide_rows), "suicide_la.csv"),
         "provision": (pd.DataFrame(provision_rows), "provision.csv"),
     }

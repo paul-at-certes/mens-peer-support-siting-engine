@@ -16,6 +16,7 @@ dependencies = [
     "pyyaml>=6.0",
     "requests>=2.31",        # real-data HTTP fetch
     "odfpy>=1.4",            # read Welsh WIMD .ods
+    "xlrd>=2.0",             # read the ONS suicide-by-occupation .xls
     "streamlit>=1.30",
     "pydeck>=0.8",
 ]

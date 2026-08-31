@@ -23,11 +23,14 @@ All normalisation is WITHIN-NATION — IMD/WIMD/SIMD and the censuses are not
 comparable across borders, so the UK view is stitched percentiles, never a raw
 cross-border scale.
 
-One column, ``no_car_share``, is carried purely as CONTEXT. It is attached after
-the score is computed, deliberately outside ``prepare_components``, so it cannot
-reach need_index, supply_index, priority_score, the factor breakdown, the tiers
-or the sensitivity analysis. It says where the car-only travel time overstates
-access; it does not change the ranking. See src/ingest/car_access.py.
+Three columns are carried purely as CONTEXT — ``no_car_share``, the RUC21
+remoteness class, and the ``occupation_blind_spot`` flag. All three are attached
+after the score is computed, deliberately outside ``prepare_components``, so none
+of them can reach need_index, supply_index, priority_score, the factor breakdown,
+the tiers or the sensitivity analysis. They say where the car-only travel time
+overstates access, which areas the remoteness view re-ranks, and where the need
+index is structurally blind. None of them changes the ranking. See
+src/ingest/car_access.py, src/ingest/remoteness.py and src/blindspot.py.
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ import json
 import numpy as np
 import pandas as pd
 
+from . import blindspot
 from .config import Config
 
 # Components that make up the need index. suicide_signal is carried separately
@@ -90,7 +94,9 @@ def prepare_components(cfg: Config, travel_weight: float | None = None,
     df = (geo
           .merge(pop[["area_code", "male_working_age_pop"]], on="area_code")
           .merge(dep[["area_code", "deprivation_proxy"]], on="area_code")
-          .merge(occ[["area_code", "occupation_proxy"]], on="area_code")
+          .merge(occ[[c for c in ("area_code", "occupation_proxy",
+                                  "occupation_top_groups") if c in occ.columns]],
+                 on="area_code")
           .merge(iso[["area_code", "isolation_proxy"]], on="area_code")
           .merge(acc[["area_code", "travel_minutes", "groups_within_catchment"]],
                  on="area_code"))
@@ -162,6 +168,21 @@ def _car_access(cfg: Config) -> pd.Series:
     return car.set_index("area_code")["no_car_share"].astype(float)
 
 
+def _remoteness(cfg: Config) -> pd.DataFrame:
+    """RUC21 class per area. Empty if not ingested.
+
+    DESCRIPTIVE ONLY — never an input to a score. Kept out of
+    prepare_components() for the same reason as _car_access: so no weighting
+    scheme, tier or sensitivity draw can reach it even by accident. It decides
+    which areas the remoteness VIEW re-ranks; it never decides a rank.
+    """
+    path = cfg.path("interim") / "fact_remoteness.parquet"
+    if not path.exists():
+        return pd.DataFrame(columns=["ruc21_code", "ruc21_label", "is_remote"])
+    ruc = pd.read_parquet(path)
+    return ruc.set_index("area_code")[["ruc21_code", "ruc21_label", "is_remote"]]
+
+
 def run(cfg: Config) -> pd.DataFrame:
     comp_w, w_suicide = declared_weights(cfg)
     df = prepare_components(cfg)
@@ -181,18 +202,43 @@ def run(cfg: Config) -> pd.DataFrame:
     # no figure shows no figure rather than a made-up one.
     df["no_car_share"] = _car_access(cfg).reindex(df["area_code"].to_numpy()).to_numpy()
 
+    # --- Descriptive context: remoteness (RUC21) ---------------------------
+    # Same placement, same reason. This is the axis the remoteness view cuts on
+    # and it must not be able to reach a score. An area with no class is left
+    # null rather than defaulted to "not remote", which would be a claim.
+    _ruc = _remoteness(cfg).reindex(df["area_code"].to_numpy())
+    df["ruc21_code"] = _ruc["ruc21_code"].to_numpy()
+    df["ruc21_label"] = _ruc["ruc21_label"].to_numpy()
+    df["is_remote"] = _ruc["is_remote"].to_numpy()
+
+    # --- Descriptive context: the occupational blind spot ------------------
+    # Derived FROM need_index, which is already final on the line above this
+    # block, so the dependency can only run one way. See src/blindspot.py for
+    # the threshold and why it is that one.
+    df["occupation_blind_spot"] = blindspot.flag(df["occupation_proxy"], df["need_index"])
+
     # --- Factor breakdown (per-area explanation) ---------------------------
+    has_top = "occupation_top_groups" in df.columns
+
     def _breakdown(i: int) -> str:
+        comps = {
+            c: {
+                "percentile": round(float(df[f"pct_{c}"].iloc[i]), 4),
+                # Normalised share, so the four weights in a breakdown sum
+                # to 1 and each contribution = weight x percentile.
+                "weight": round(float(comp_w[c]) / total_w, 4),
+                "contribution": round(float(contrib[c].iloc[i] / total_w), 4),
+            } for c in PROXY_COMPONENTS
+        }
+        # Which occupations actually drive the occupation percentile. Descriptive
+        # only: it explains a score that is already settled, and nothing here
+        # feeds back into one.
+        if has_top:
+            top = df["occupation_top_groups"].iloc[i]
+            if isinstance(top, str):
+                comps["occupation"]["top_groups"] = json.loads(top)
         row = {
-            "components": {
-                c: {
-                    "percentile": round(float(df[f"pct_{c}"].iloc[i]), 4),
-                    # Normalised share, so the four weights in a breakdown sum
-                    # to 1 and each contribution = weight x percentile.
-                    "weight": round(float(comp_w[c]) / total_w, 4),
-                    "contribution": round(float(contrib[c].iloc[i] / total_w), 4),
-                } for c in PROXY_COMPONENTS
-            },
+            "components": comps,
             "suicide_signal": {
                 "la_rate_per_100k": (None if pd.isna(df["suicide_signal_la"].iloc[i])
                                      else round(float(df["suicide_signal_la"].iloc[i]), 2)),
@@ -214,7 +260,9 @@ def run(cfg: Config) -> pd.DataFrame:
         "centroid_lon", "centroid_lat", "male_working_age_pop",
         "need_index", "supply_index", "priority_score", "reach_score",
         "rank", "rank_reach", "percentile", "travel_minutes",
-        "groups_within_catchment", "no_car_share", "factor_breakdown",
+        "groups_within_catchment", "no_car_share",
+        "ruc21_code", "ruc21_label", "is_remote", "occupation_blind_spot",
+        "factor_breakdown",
     ]
     out = df[cols].sort_values("priority_score", ascending=False).reset_index(drop=True)
 

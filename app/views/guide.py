@@ -46,6 +46,15 @@ def _facts() -> dict:
         f["weights"] = json.loads(cfg.path("weights").read_text())
     except Exception:
         f["weights"] = {}
+    try:
+        f["blind_spot"] = json.loads(cfg.path("blind_spot").read_text())
+    except Exception:
+        f["blind_spot"] = {}
+    try:
+        score = pd.read_parquet(cfg.path("fact_score"))
+        f["n_remote"] = int(score["is_remote"].fillna(False).astype(bool).sum())
+    except Exception:
+        pass
     return f
 
 
@@ -203,9 +212,13 @@ st.dataframe(
         {"What": "Poverty and unemployment",
          "Who publishes it": "UK and Welsh governments, in the Indices of Deprivation",
          "Vintage": v["deprivation"]},
-        {"What": "Jobs, households and relationships",
+        {"What": "Households and relationships",
          "Who publishes it": "The 2021 Census, the survey every household fills in",
          "Vintage": v["census"]},
+        {"What": "Jobs, and how risky each kind of job is",
+         "Who publishes it": "The 2021 Census, plus recorded suicides by occupation "
+                             "from the Office for National Statistics",
+         "Vintage": v["occupation"]},
         {"What": "How many men live where",
          "Who publishes it": "Office for National Statistics, from the Census",
          "Vintage": v["population"]},
@@ -437,7 +450,7 @@ with st.expander("Does the tool ever say it is unsure?"):
         )
 
 # ---------------------------------------------------------------------------
-st.header("9. The two lists, and why they differ")
+st.header("9. The three lists, and why they differ")
 
 va, vb = st.columns(2)
 with va:
@@ -471,8 +484,76 @@ st.caption(
     "an urgent pocket without being where you would reach the most men."
 )
 
+_n_remote = F.get("n_remote")
+st.markdown("#### Remoteness: places far from a town, compared with each other")
+st.markdown(
+    f"""
+    A third view takes the {_n_remote:,} areas that sit **further from a major town
+    or city** and ranks them against each other instead of against the whole
+    country. Nothing is rescored: the figures are the same ones the first list
+    uses, and no area moves up or down because it is remote.
+    """ if _n_remote else """
+    A third view takes the areas that sit **further from a major town or city** and
+    ranks them against each other instead of against the whole country. Nothing is
+    rescored.
+    """
+)
+st.caption(
+    "Two things to know before reading it. Remote *urban* places — coastal Cornwall, "
+    "Thanet — already do well on the main list, so they fill the top of this one "
+    "too; the filter in the sidebar lets you set them aside and see the smaller "
+    "rural areas the view was built for. And a weekly group needs enough men in a "
+    "room: these areas hold an ordinary number of men spread over a great deal more "
+    "ground, so the honest answer for one of them may be a travelling group, or a "
+    "single group in the market town."
+)
+
 # ---------------------------------------------------------------------------
-st.header("10. What this tool cannot tell you")
+_bs = F.get("blind_spot") or {}
+st.header("10. The places this ranking cannot see")
+if _bs.get("n_flagged"):
+    st.markdown(
+        f"""
+        The ranking is driven mainly by poverty and by men living alone. Together
+        those outweigh the jobs factor about two to one, and places that score high
+        on jobs alone tend to score low on both of the others. So an area where men
+        do some of the most dangerous work in the country, but which is not poor,
+        will never appear near the top of these lists.
+
+        Rather than leave that as a footnote, every area is tested for it.
+        **{_bs['n_flagged']:,} of {_bs['n_areas']:,}** are marked: the mix of jobs men
+        do there carries at least the average suicide risk for men in work across
+        England and Wales, and this ranking still scores the area as below-average
+        need. You will see the mark on the map and in each area's own breakdown.
+        """
+    )
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Areas marked", f"{_bs['n_flagged']:,}")
+    c2.metric("Best of them, nationally",
+              f"#{_bs.get('ranking', {}).get('best_rank', 0):,}")
+    c3.metric("Reaching the shortlist", "0")
+    st.caption(
+        "Read the mark as a statement about this ranking, not about the place. It "
+        "says the ranking is blind there. It does not say a group should open there "
+        "— being hard to reach is a separate question, and some marked areas already "
+        "have a group nearby. Most of them are in mid-Wales, the Welsh coast and the "
+        "English uplands, but not all: outer-London neighbourhoods with a lot of men "
+        "in the building trades are marked too."
+    )
+else:
+    st.markdown(
+        """
+        The ranking is driven mainly by poverty and by men living alone. Together
+        those outweigh the jobs factor about two to one, so an area where men do some
+        of the most dangerous work in the country, but which is not poor, will not
+        appear near the top of these lists. On this build the check that marks those
+        areas has not run, so they are not shown. If they matter to you, they need
+        looking for separately.
+        """
+    )
+
+# ---------------------------------------------------------------------------
+st.header("11. What this tool cannot tell you")
 
 _no_car = F.get("no_car_national")
 _no_car_line = (
