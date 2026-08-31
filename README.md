@@ -63,7 +63,9 @@ python -m src.report
 
 ### The map (`streamlit run app/streamlit_app.py`)
 
-The priority surface defaults to showing **only the decision-relevant areas** —
+The priority surface runs **full width**, with the ranked shortlist and the
+per-area factor breakdown side by side beneath it. It defaults to showing **only
+the decision-relevant areas** —
 tier ① plus ②, 171 of 35,672 today. Plotting all 35k small areas is slow to
 render and unreadable: the areas you would act on are a few hundred, and drawing
 the rest buries them. The sidebar's **Map: areas shown** switches between:

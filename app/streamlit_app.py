@@ -76,6 +76,7 @@ weights_meta = load_json(str(cfg.path("weights")))
 sens = load_json(str(cfg.path("sensitivity")))
 
 robustness = sens.get("area_robustness", {})
+area_names = dict(zip(df["area_code"], df["area_name"]))
 
 # --- Header -----------------------------------------------------------------
 st.title("Men's Peer-Support Siting Engine")
@@ -169,57 +170,57 @@ view_df["_tip_body"] = (
 )
 map_df = view_df[map_df_filter]
 
-# --- Map --------------------------------------------------------------------
-left, right = st.columns([3, 2])
-
-with left:
-    st.subheader(f"Priority surface — {view}")
-    layers = [
-        pdk.Layer(
-            "ScatterplotLayer",
-            data=map_df,
-            get_position="[centroid_lon, centroid_lat]",
-            get_fill_color="[_r, _g, _b, 170]",
-            get_radius="_radius",
-            pickable=True,
-        )
-    ]
-    if show_groups and len(groups):
-        group_pts = groups.copy()
-        group_pts["_tip_title"] = (group_pts["name"].astype(str) + " ("
-                                   + group_pts["org"].astype(str) + ")")
-        group_pts["_tip_body"] = ("existing group · " + group_pts["status"].astype(str)
-                                  + "\n" + group_pts["postcode"].astype(str))
-        layers.append(pdk.Layer(
-            "ScatterplotLayer",
-            data=group_pts,
-            get_position="[lon, lat]",
-            get_fill_color="[30, 90, 200, 230]",
-            get_radius=2200,
-            pickable=True,
-        ))
-    centre = map_df if len(map_df) else view_df
-    view_state = pdk.ViewState(
-        latitude=float(centre["centroid_lat"].mean()),
-        longitude=float(centre["centroid_lon"].mean()),
-        zoom=6,
+# --- Map (full width) -------------------------------------------------------
+st.subheader(f"Priority surface — {view}")
+layers = [
+    pdk.Layer(
+        "ScatterplotLayer",
+        data=map_df,
+        get_position="[centroid_lon, centroid_lat]",
+        get_fill_color="[_r, _g, _b, 170]",
+        get_radius="_radius",
+        pickable=True,
     )
-    tooltip = {"text": "{_tip_title}\n{_tip_body}"}
-    st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view_state,
-                             tooltip=tooltip, map_style=None))
-    st.caption(
-        f"Showing **{len(map_df):,}** of {len(view_df):,} areas — {scope_note}. "
-        "🔴 = priority (darker/larger = higher), scaled against all areas in the "
-        "chosen nation(s).  🔵 = existing groups. Hover for figures."
-    )
-    if not len(map_df):
-        st.info("No areas match this scope. Widen the nation or map filter.")
+]
+if show_groups and len(groups):
+    group_pts = groups.copy()
+    group_pts["_tip_title"] = (group_pts["name"].astype(str) + " ("
+                               + group_pts["org"].astype(str) + ")")
+    group_pts["_tip_body"] = ("existing group · " + group_pts["status"].astype(str)
+                              + "\n" + group_pts["postcode"].astype(str))
+    layers.append(pdk.Layer(
+        "ScatterplotLayer",
+        data=group_pts,
+        get_position="[lon, lat]",
+        get_fill_color="[30, 90, 200, 230]",
+        get_radius=2200,
+        pickable=True,
+    ))
+centre = map_df if len(map_df) else view_df
+view_state = pdk.ViewState(
+    latitude=float(centre["centroid_lat"].mean()),
+    longitude=float(centre["centroid_lon"].mean()),
+    zoom=6,
+)
+tooltip = {"text": "{_tip_title}\n{_tip_body}"}
+st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view_state,
+                         tooltip=tooltip, map_style=None), height=560)
+st.caption(
+    f"Showing **{len(map_df):,}** of {len(view_df):,} areas — {scope_note}. "
+    "🔴 = priority (darker/larger = higher), scaled against all areas in the "
+    "chosen nation(s).  🔵 = existing groups. Hover for figures."
+)
+if not len(map_df):
+    st.info("No areas match this scope. Widen the nation or map filter.")
 
-# --- Ranked table + per-area breakdown -------------------------------------
-with right:
+# --- Ranked table | per-area breakdown, side by side ------------------------
+st.divider()
+ranked = view_df.sort_values(score_col, ascending=False).head(top_n)
+rank_col = "rank" if score_col == "priority_score" else "rank_reach"
+table_col, detail_col = st.columns([3, 2])
+
+with table_col:
     st.subheader(f"Top {top_n} shortlist")
-    ranked = view_df.sort_values(score_col, ascending=False).head(top_n)
-    rank_col = "rank" if score_col == "priority_score" else "rank_reach"
     tbl_cols = [rank_col, "area_code", "area_name", "nation"]
     if "tier" in ranked.columns:
         tbl_cols.append("tier_label")
@@ -243,8 +244,10 @@ with right:
             "judgement decide."
         )
 
+with detail_col:
     st.subheader("Per-area factor breakdown")
-    pick = st.selectbox("Area", ranked["area_code"].tolist())
+    pick = st.selectbox("Area", ranked["area_code"].tolist(),
+                        format_func=lambda c: f"{c} — {area_names.get(c, '')}")
     if pick:
         row = df[df["area_code"] == pick].iloc[0]
         fb = json.loads(row["factor_breakdown"])
@@ -254,19 +257,26 @@ with right:
         st.markdown(f"**{pick}** — {row['area_name']} ({row['nation']}), "
                     f"LA: {row['la_name']}{tier_note}")
         c1, c2, c3 = st.columns(3)
-        c1.metric("need_index", f"{fb['need_index']:.3f}")
-        c2.metric("supply_index", f"{fb['supply_index']:.3f}")
-        c3.metric("priority_score", f"{fb['priority_score']:.3f}")
+        c1.metric("need", f"{fb['need_index']:.2f}")
+        c2.metric("supply", f"{fb['supply_index']:.2f}")
+        c3.metric("priority", f"{fb['priority_score']:.2f}")
 
         rows = []
         for name, c in fb["components"].items():
             rows.append({"factor": name, "percentile": c["percentile"],
                          "weight": c["weight"], "contribution": c["contribution"]})
-        s = fb["suicide_signal"]
-        rows.append({"factor": "suicide_signal (LA)", "percentile": s["percentile"],
-                     "weight": s["weight"], "contribution": s["contribution"]})
-        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
-        st.caption(f"Nearest group: {row['travel_minutes']} min · "
+        sig = fb["suicide_signal"]
+        rows.append({"factor": "suicide_signal (LA)", "percentile": sig["percentile"],
+                     "weight": sig["weight"], "contribution": sig["contribution"]})
+        st.dataframe(
+            pd.DataFrame(rows), hide_index=True, use_container_width=True,
+            column_config={
+                "percentile": st.column_config.NumberColumn(format="%.2f"),
+                "weight": st.column_config.NumberColumn(format="%.2f"),
+                "contribution": st.column_config.NumberColumn(format="%.2f"),
+            },
+        )
+        st.caption(f"Nearest group: {row['travel_minutes']:.0f} min · "
                    f"groups within catchment: {row['groups_within_catchment']}")
         if pick in robustness:
             ret = robustness[pick]
