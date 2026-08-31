@@ -23,14 +23,19 @@ def travel_note(cfg: Config) -> str:
     """Describe the routing actually used — never a hard-coded assumption."""
     provider = cfg["accessibility"].get("provider", "haversine")
     if provider == "osrm":
-        return ("real road driving times via a self-hosted OSRM routing engine "
-                "(car only; public-transport access is not yet modelled).")
+        return ("real road driving times on the GB road network via a self-hosted OSRM "
+                "routing engine. Car only — public-transport access is not modelled, "
+                "which matters for this population: evening sessions and men without "
+                "cars in deprived areas face a journey this does not represent.")
     if provider == "ors":
         return ("OpenRouteService driving times (car only; public-transport access "
                 "is not yet modelled).")
     return (f"the {provider} provider — straight-line distance at a constant assumed "
-            f"speed, which over-states accessibility in rural, estuarine and "
-            f"mountainous areas. Car only; public transport is not modelled.")
+            f"speed. Measured against real road routing on this data it is wrong in "
+            f"BOTH directions: it under-states typical journeys (median nearest group "
+            f"10.2 min against 13.8 by road) while over-stating the worst ones, because "
+            f"a flat speed ignores motorways (90th percentile 41.4 min against 35.1). "
+            f"Car only; public transport is not modelled.")
 
 
 def data_caveats(cfg: Config) -> list[dict]:

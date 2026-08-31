@@ -223,4 +223,11 @@ rather than asserted.
   small local authorities.
 - **How much weight occupation should carry** — the one dimension the shortlist
   is genuinely sensitive to, and a domain question rather than a modelling one.
-- **Public transport** is unmodelled; travel time is car-only.
+- **Public transport** is unmodelled; travel time is car-only. Since 2026-08-31
+  the supply surface uses real OSRM road driving times rather than straight-line
+  distance (median nearest group 13.8 min against the stub's 10.2). Notably the
+  stub was wrong in *both* directions — its flat 40 km/h ignores motorways, so it
+  over-stated the worst journeys (90th percentile 41.4 min against 35.1). The
+  switch moved 4 of the per-capita top 20, all of which stayed inside the new top
+  100. Public transport at session times remains the real gap for a population
+  that disproportionately lacks cars.

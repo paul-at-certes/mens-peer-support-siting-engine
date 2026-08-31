@@ -13,6 +13,7 @@ Straight-line distance OVER-states accessibility in rural/estuarine geographies
 from __future__ import annotations
 
 import hashlib
+import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -119,7 +120,15 @@ class OSRMTravelTimeProvider(TravelTimeProvider):
 
         cache = self._cache_path(o, d)
         if cache and cache.exists():
-            return np.load(cache)["minutes"]
+            try:
+                return np.load(cache)["minutes"]
+            except Exception as exc:  # noqa: BLE001
+                # A cache truncated by an interrupted write (Ctrl-C, timeout,
+                # crash) would otherwise poison every later run with an opaque
+                # BadZipFile. Treat it as a miss and rebuild.
+                print(f"[travel_time] WARNING: discarding unreadable matrix cache "
+                      f"{cache.name} ({type(exc).__name__}); recomputing.")
+                cache.unlink(missing_ok=True)
 
         n_dest = len(d)
         if n_dest >= self.max_table_size:
@@ -134,8 +143,15 @@ class OSRMTravelTimeProvider(TravelTimeProvider):
             out[start:start + len(block)] = self._table(block, d)
 
         if cache:
+            # Write-then-rename: a partial file must never be visible under the
+            # real name, or the next run inherits a corrupt cache.
             cache.parent.mkdir(parents=True, exist_ok=True)
-            np.savez_compressed(cache, minutes=out)
+            tmp = cache.with_name(cache.name + ".tmp")
+            # Write through an open handle: np.savez_compressed appends ".npz"
+            # to a *path* that lacks it, which would rename the wrong file.
+            with open(tmp, "wb") as fh:
+                np.savez_compressed(fh, minutes=out)
+            os.replace(tmp, cache)
         return out
 
     def _table(self, origins_block: np.ndarray, destinations: np.ndarray) -> np.ndarray:
@@ -149,7 +165,26 @@ class OSRMTravelTimeProvider(TravelTimeProvider):
             "annotations": "duration",
         }
         url = f"{self.base_url}/table/v1/{self.profile}/{coord_str}"
-        data = http_get(url, params=params, timeout=self.timeout).json()
+        try:
+            data = http_get(url, params=params, timeout=self.timeout).json()
+        except Exception as exc:  # noqa: BLE001
+            # The /table URL carries every coordinate, so it runs to tens of KB.
+            # Printing it whole buries the instructions that follow.
+            detail = str(exc).split("\n")[0]
+            if len(detail) > 160:
+                detail = detail[:160] + " ...[url truncated]"
+            raise RuntimeError(
+                f"OSRM is configured (accessibility.provider: osrm) but "
+                f"{self.base_url} did not answer.\n"
+                f"  {type(exc).__name__}: {detail}\n"
+                f"  Start the routing server (the prepared graph lives in osrm-data/):\n"
+                f"    docker run -d --name amc-osrm -p 5001:5000 \\\n"
+                f"      -v \"$PWD/osrm-data:/data\" osrm/osrm-backend \\\n"
+                f"      osrm-routed --algorithm mld --max-table-size 2000 \\\n"
+                f"      /data/great-britain-latest.osrm\n"
+                f"  Or set accessibility.provider: haversine to run without a server "
+                f"(straight-line; wrong in both directions — see src/caveats.py)."
+            ) from exc
         if data.get("code") != "Ok":
             raise RuntimeError(
                 f"OSRM /table error: {data.get('code')} {data.get('message', '')}")

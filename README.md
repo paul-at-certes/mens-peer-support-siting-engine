@@ -109,22 +109,48 @@ Key real-data honesty notes (also surfaced on the map face):
   access). Real road routing via **self-hosted OSRM** is implemented and ready —
   see below.
 
-### Real routing (OSRM)
+### Real routing (OSRM) — the shipped default
 
-The `OSRMTravelTimeProvider` (`src/travel_time.py`) is built and tested: it
-computes the origin×destination matrix in chunks against an OSRM `/table`
-service and caches it (keyed by a content hash) under
-`accessibility.matrix_cache`, since provision changes rarely. To switch it on:
+`accessibility.provider: osrm` is the default: travel times are **real road
+driving times** on the GB network, not straight lines. The prepared graph is in
+`osrm-data/` (built from a Geofabrik `great-britain-latest.osm.pbf` extract with
+`osrm-extract` / `osrm-partition` / `osrm-customize`).
 
-1. Stand up OSRM on a GB extract (one-off — you can tear it down once the matrix
-   is cached). The class docstring has the exact `docker run` commands; the
-   server needs `--max-table-size` ≥ `accessibility.osrm.max_table_size` (and >
-   the group count).
-2. Set `accessibility.provider: osrm` and `accessibility.osrm.base_url` in
-   `config.yaml`, then re-run `python -m src.pipeline`.
+**Start the routing server** — one line, and the graph loads in a few seconds:
 
-Haversine stays the default so the pipeline runs with zero dependencies until
-then. (ORS remains a stub behind the same interface.)
+```bash
+docker run -d --name amc-osrm -p 5001:5000 \
+  -v "$PWD/osrm-data:/data" osrm/osrm-backend \
+  osrm-routed --algorithm mld --max-table-size 2000 \
+  /data/great-britain-latest.osrm
+```
+
+`--algorithm mld` is required (the graph is partitioned/customised, not
+contracted). `--max-table-size` must exceed the group count — 354 groups today,
+2000 leaves plenty of headroom and sets the origin chunk size to 1,646.
+
+The 35,672 × 354 matrix takes **~2 minutes** and is then **cached** under
+`data/interim/travel_matrix/`, keyed by a content hash of the coordinates. So the
+server is only needed on the first run after geography or provision changes — you
+can `docker stop amc-osrm` afterwards. If the server is down while `provider:
+osrm` is set, the pipeline stops with the docker command above rather than a
+connection error, and it never silently falls back to straight-line.
+
+**Why it matters.** Against the haversine stub, road routing is wrong in *both*
+directions, not just one:
+
+| | haversine | OSRM road |
+|---|---|---|
+| median nearest group | 10.2 min | **13.8 min** |
+| 90th percentile | 41.4 min | **35.1 min** |
+
+A flat 40 km/h under-states typical journeys by ~35% while over-stating the worst
+ones, because it ignores motorways. Switching moved 4 of the per-capita top 20 —
+though all 20 stayed inside the OSRM top 100, consistent with the supply axis
+being the most stable part of the model.
+
+Set `provider: haversine` to run with no server at all. `ors` remains a stub
+behind the same interface.
 
 ## Weighting & sensitivity
 

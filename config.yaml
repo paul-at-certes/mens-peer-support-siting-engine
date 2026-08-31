@@ -149,10 +149,17 @@ sensitivity:
 # Accessibility / supply.
 # ---------------------------------------------------------------------------
 accessibility:
-  provider: haversine        # haversine | osrm | ors
-  # haversine is the SHIPPED DEFAULT so a fresh clone reproduces the committed
-  # numbers with no server running. Switch to osrm/ors locally for real routing
-  # and re-run the pipeline; the map and PDF report the provider actually used.
+  provider: osrm             # haversine | osrm | ors
+  # osrm = real road driving times from the prepared GB graph in osrm-data/.
+  # REQUIRES the routing server to be running (README "Real routing (OSRM)" has
+  # the one-line docker command; the pipeline fails with it if the server is
+  # down). The matrix is cached under matrix_cache below, so the server is only
+  # needed for the first run after provision or geography changes.
+  #
+  # Set `haversine` to run with no server at all — straight-line distance at a
+  # constant speed, which over-states accessibility (median nearest group 10.2
+  # min straight-line vs 14.8 min by road). The map and PDF always report the
+  # provider that actually produced the numbers.
   catchment_minutes: 30      # groups reachable within this threshold
   # Supply index = travel_weight*(1 - travel_pct) + (1 - travel_weight)*catchment_norm.
   # These were hard-coded; they are here because they gate the shortlist harder
