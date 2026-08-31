@@ -170,6 +170,21 @@ view_df["_tip_body"] = (
 )
 map_df = view_df[map_df_filter]
 
+# --- Shortlist selection ----------------------------------------------------
+# Streamlit renders top to bottom, so the table below cannot reach back up to the
+# map. Its selection is read out of session state here instead: selecting a row
+# triggers a rerun, and on that rerun the state is set before the map is built.
+ranked = view_df.sort_values(score_col, ascending=False).head(top_n)
+rank_col = "rank" if score_col == "priority_score" else "rank_reach"
+
+SHORTLIST_KEY = "shortlist_table"
+_sel = st.session_state.get(SHORTLIST_KEY) or {}
+_rows = (_sel.get("selection") or {}).get("rows") or []
+# A stale row index can outlive the rows it pointed at — changing the nation
+# filter, the view or top N reshapes `ranked` without clearing the selection.
+selected_code = (ranked["area_code"].iloc[_rows[0]]
+                 if _rows and _rows[0] < len(ranked) else None)
+
 # --- Map (full width) -------------------------------------------------------
 st.subheader(f"Priority surface — {view}")
 layers = [
@@ -196,27 +211,53 @@ if show_groups and len(groups):
         get_radius=2200,
         pickable=True,
     ))
-centre = map_df if len(map_df) else view_df
+selected_row = (view_df[view_df["area_code"] == selected_code]
+                if selected_code is not None else view_df.iloc[0:0])
+if len(selected_row):
+    # Drawn from view_df, not map_df, so a selected area still shows even when
+    # the tier scope would otherwise hide it. A hollow ring rather than a fill,
+    # so the area's own priority colour stays readable underneath.
+    layers.append(pdk.Layer(
+        "ScatterplotLayer",
+        data=selected_row,
+        get_position="[centroid_lon, centroid_lat]",
+        stroked=True,
+        filled=False,
+        get_line_color=[250, 204, 21, 255],
+        line_width_min_pixels=4,
+        get_radius=7000,
+        radius_min_pixels=14,
+        radius_max_pixels=48,
+        pickable=False,
+    ))
+
+if len(selected_row):
+    centre, zoom = selected_row, 10        # jump to what was just selected
+else:
+    centre, zoom = (map_df if len(map_df) else view_df), 6
 view_state = pdk.ViewState(
     latitude=float(centre["centroid_lat"].mean()),
     longitude=float(centre["centroid_lon"].mean()),
-    zoom=6,
+    zoom=zoom,
 )
 tooltip = {"text": "{_tip_title}\n{_tip_body}"}
 st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view_state,
                          tooltip=tooltip, map_style=None), height=560)
+_sel_note = ""
+if selected_code is not None:
+    _hidden = "" if selected_code in set(map_df["area_code"]) else " — outside the current scope, shown anyway"
+    _sel_note = (f" 🟡 **{selected_code} — {area_names.get(selected_code, '')}** "
+                 f"selected in the shortlist{_hidden}.")
 st.caption(
     f"Showing **{len(map_df):,}** of {len(view_df):,} areas — {scope_note}. "
     "🔴 = priority (darker/larger = higher), scaled against all areas in the "
-    "chosen nation(s).  🔵 = existing groups. Hover for figures."
+    f"chosen nation(s).  🔵 = existing groups. Hover for figures.{_sel_note}"
 )
 if not len(map_df):
     st.info("No areas match this scope. Widen the nation or map filter.")
 
 # --- Ranked table | per-area breakdown, side by side ------------------------
 st.divider()
-ranked = view_df.sort_values(score_col, ascending=False).head(top_n)
-rank_col = "rank" if score_col == "priority_score" else "rank_reach"
 table_col, detail_col = st.columns([3, 2])
 
 with table_col:
@@ -229,12 +270,14 @@ with table_col:
         ranked[tbl_cols].rename(columns={score_col: "score", "tier_label": "tier",
                                          "area_name": "area"}),
         hide_index=True, use_container_width=True,
+        key=SHORTLIST_KEY, on_select="rerun", selection_mode="single-row",
         column_config={
             "need_index": st.column_config.NumberColumn("need", format="%.2f"),
             "supply_index": st.column_config.NumberColumn("supply", format="%.2f"),
             "score": st.column_config.NumberColumn(format="%.2f"),
         },
     )
+    st.caption("Select a row to ring that area on the map and load its breakdown.")
     if "tier" in ranked.columns:
         st.caption(
             "**Tier, not rank.** ① areas sit inside the top "
@@ -246,8 +289,12 @@ with table_col:
 
 with detail_col:
     st.subheader("Per-area factor breakdown")
-    pick = st.selectbox("Area", ranked["area_code"].tolist(),
-                        format_func=lambda c: f"{c} — {area_names.get(c, '')}")
+    _codes = ranked["area_code"].tolist()
+    pick = st.selectbox(
+        "Area", _codes,
+        index=_codes.index(selected_code) if selected_code in _codes else 0,
+        format_func=lambda c: f"{c} — {area_names.get(c, '')}",
+    )
     if pick:
         row = df[df["area_code"] == pick].iloc[0]
         fb = json.loads(row["factor_breakdown"])

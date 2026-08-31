@@ -64,7 +64,10 @@ python -m src.report
 ### The map (`streamlit run app/streamlit_app.py`)
 
 The priority surface runs **full width**, with the ranked shortlist and the
-per-area factor breakdown side by side beneath it. It defaults to showing **only
+per-area factor breakdown side by side beneath it. **Selecting a row in the
+shortlist** rings that area on the map in yellow, recentres on it, and loads its
+factor breakdown — and it stays visible even if the current tier scope would
+otherwise hide it. It defaults to showing **only
 the decision-relevant areas** —
 tier ① plus ②, 171 of 35,672 today. Plotting all 35k small areas is slow to
 render and unreadable: the areas you would act on are a few hundred, and drawing
