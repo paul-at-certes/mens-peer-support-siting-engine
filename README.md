@@ -250,9 +250,9 @@ occupation / 0.25 isolation) and are applied to within-nation percentile ranks.
 
 The reason is in [ADR 0001](docs/adr/0001-calibration-as-veto.md): at LA level
 the three proxies are mutually collinear (deprivation correlates 0.72 with
-isolation, 0.63 with occupation), so the multivariable fit returns deprivation as
-significantly *protective*, and equal weights disagrees with each fitted scheme
-about as much as they disagree with each other. The model cannot identify these
+isolation, 0.63 with occupation), so the multivariable fit cannot show
+deprivation to be positive at all, and equal weights disagrees with each fitted
+scheme about as much as they disagree with each other. The model cannot identify these
 weights — but the choice still moves up to 12 of the top 20 areas. So we state
 the weights, defend them, and use the fit to **veto** any the data contradicts.
 
