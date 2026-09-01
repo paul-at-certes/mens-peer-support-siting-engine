@@ -1,7 +1,7 @@
 # Next session — where to pick up
 
-**Written 2026-08-31, updated 2026-09-01.** State of branch
-`soften-the-claim-and-clear-the-brief` (four commits off `8cde629`, reviewed).
+**Written 2026-08-31, updated 2026-09-01.** State of `main` after PR #4 merged,
+plus the one follow-up finding on `count-declined-harvest-requests` (PR #5).
 Everything here was verified against the real England & Wales run, not inferred.
 
 ---
@@ -129,10 +129,13 @@ paths, the declined-but-parseable response, and the missing-column fallback;
 
 ## 4. Start here
 
-Nothing is outstanding. The branch is three commits — the softened claim, the
-reframed caveat, the review fixes — and the only open item is its review and
-merge. Once it lands, this file's §1 and §2 are history rather than work, and the
-next session starts from whatever you want to build.
+Nothing is outstanding. PR #4 — the softened claim, the reframed caveat, the
+review fixes — is merged. PR #5 is the one finding its own review turned up
+(§2, last bullet); once that lands, §1 and §2 are history rather than work, and
+the next session starts from whatever you want to build.
+
+Nothing here needs a re-run: no weight, veto or rank has moved since the figures
+in the table above were measured.
 
 ---
 
