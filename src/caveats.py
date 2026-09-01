@@ -224,6 +224,109 @@ def _shortlist_reach_clause(ranking: dict) -> str:
             f"{'does' if n_short == 1 else 'do'} reach the shortlist")
 
 
+def _concordance(cfg: Config) -> dict:
+    """Load the concordance diagnostic, or an empty dict if this build has none.
+
+    Written by spikes/group_need_concordance.py, never by the pipeline, so most
+    builds will not have it. Both notes below degrade to a plain statement
+    rather than to silence: a check that was not run is itself worth saying.
+    """
+    path = _diagnostic_path(cfg, "concordance")
+    if path is None or not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except (ValueError, OSError):
+        return {}
+
+
+def catchment_note(cfg: Config) -> str:
+    """A rank names a pocket; a group serves a catchment.
+
+    The qualitative half is unconditional, because it follows from the grain of
+    the ranking rather than from any measurement. The measured half is added
+    only when the diagnostic is there to supply the figures.
+    """
+    body = """
+        The areas ranked here hold about 1,500 people each, and a ranking finds the
+        sharpest concentration of need it can. A group opened in one of them draws
+        men from the surrounding streets as well, and the surrounding streets are
+        always more mixed than the sharpest point."""
+    c = (_concordance(cfg) or {}).get("c_venue_vs_catchment") or {}
+    venue, catch = c.get("venue_mean_national_percentile"), c.get(
+        "catchment_mean_national_percentile")
+    if venue is not None and catch is not None:
+        body += f"""
+            Measured on the groups that already exist: the neighbourhood a group sits
+            in scores around {venue:.0%} on need nationally, while the neighbourhoods
+            it is the nearest group to average {catch:.0%}."""
+    body += """
+        Read a high rank as saying there is a concentration here, not as saying that
+        everyone a group here would reach looks like this."""
+    return _words(body)
+
+
+def concordance_note(cfg: Config) -> str:
+    """Whether this ranking agrees with where groups have already been opened.
+
+    Two halves, and the second is the uncomfortable one. It is stated at the
+    same volume as the first because the thing this list mostly is -- a list of
+    towns -- is the thing that half could not check.
+    """
+    c = _concordance(cfg)
+    if not c:
+        return _words("""
+            Not run for this build. Groups already exist, opened by local judgement
+            this ranking has never seen, so they can be used to check it. Nothing here
+            has been checked that way.""")
+
+    b = c.get("b_within_la") or {}
+    a = c.get("a_between_la") or {}
+    within, national = a.get("within_region") or {}, a.get("national") or {}
+    n = (c.get("inputs") or {}).get("groups_assigned")
+    mean, p_region = b.get("mean_percentile"), within.get("p_one_sided")
+    if mean is None or p_region is None:
+        return _words("""
+            A check against existing groups ran but did not report a usable result, so
+            treat this ranking as unchecked against them.""")
+
+    n_words = f"{n:,} groups" if n else "the groups"
+    first = f"""
+        {n_words} already run in England and Wales, opened over years of local
+        judgement that this ranking has never seen. Two questions were put to them.
+        Within a single council area, does the ranking rate the neighbourhood a group
+        actually sits in? Yes, clearly: those neighbourhoods sit on average at the
+        {_ordinal(round(mean * 100))} rung of a hundred for need within their own
+        council area, where choosing at random would give the fiftieth, and each of
+        the three factors clears that bar on its own."""
+
+    if p_region >= 0.05:
+        saturated = ""
+        if national.get("n_las_with_group"):
+            saturated = (" It looks true across the country as a whole, but groups "
+                         "grew outward from one town and whole regions now have one "
+                         "in every council area, so the country-wide figure is largely "
+                         "a statement about where the charity already is.")
+        second = f"""
+            Between council areas, does the ranking rate the places chosen above the
+            places passed over? That could not be shown.{saturated} Comparing regions
+            only with themselves, the difference is no better than chance. So this
+            ranking is corroborated about which part of a town, and unproven about
+            which town — and a shortlist is mostly a list of towns. Treat the choice
+            between towns as the part most needing local judgement."""
+    else:
+        second = """
+            Between council areas the ranking also rates the places chosen above the
+            places passed over, and that holds when regions are compared only with
+            themselves rather than against each other."""
+
+    tail = """
+        The comparison uses the need side only. The travel-time side is built from
+        those same groups, so measuring them against the finished score would be
+        marking this tool's homework with its own answers."""
+    return _words(first + second + tail)
+
+
 def blind_spot_definition(cfg: Config) -> str:
     """What the mark means, stated in general. The per-area wording is below.
 
@@ -332,6 +435,7 @@ def data_caveats(cfg: Config) -> list[dict]:
         _entry("Travel time", travel_note(cfg)),
         _entry("Public transport", public_transport_note(cfg)),
         _entry("What this list will not show you", outvoted_note(cfg)),
+        _entry("A rank names a pocket, not a catchment", catchment_note(cfg)),
         _entry("Likely need, not prediction", """
             Area-level only, and never to be read as a statement about any individual.
             This is a shortlist for local judgement. Venue, volunteers and partner
@@ -381,18 +485,18 @@ def assurance_notes(cfg: Config) -> list[dict]:
             body += " " + " ".join(f["message"] for f in findings)
         notes.append(_entry("Calibration check", body))
 
-    if not sens_path.exists():
-        notes.append(_entry("Stability check", "NOT RUN for this build."))
-        return notes
-
-    sens = json.loads(sens_path.read_text())
+    # No early return past this point: notes below do not depend on the
+    # sensitivity diagnostic, and an absent file must not silently drop them.
+    sens = json.loads(sens_path.read_text()) if sens_path.exists() else {}
     st = sens.get("stability", {})
     checks, unstable = st.get("checks", {}), st.get("unstable_axes", [])
     D, band = sens.get("decision_n"), sens.get("contention_band")
     readable = {"schemes": "the choice of weighting scheme",
                 "envelope": "the weights moving within what the data supports",
                 "supply": "the travel-time and catchment constants"}
-    if unstable:
+    if not sens:
+        notes.append(_entry("Stability check", "NOT RUN for this build."))
+    elif unstable:
         detail = "; ".join(
             f"{readable.get(k, k)} (only {checks[k]['worst_held']:.0%} held)" for k in unstable)
         notes.append(_entry("Stability check", f"""
@@ -411,6 +515,9 @@ def assurance_notes(cfg: Config) -> list[dict]:
             setting tested.{tail} The order within the leading group is far less certain
             than its membership, which is why the output is banded into tiers rather
             than read as a strict ranking."""))
+
+    notes.append(_entry("Checked against groups that already exist",
+                        concordance_note(cfg)))
 
     tiers = sens.get("tiers") or {}
     if tiers:

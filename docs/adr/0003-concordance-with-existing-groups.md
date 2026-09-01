@@ -166,10 +166,9 @@ face-validity conversation, not as a change.
 4. **The spike stays a spike.** It changes no weight, no veto and no rank, and
    it does not run in `python -m src.pipeline`. Its numbers move only when the
    provision harvest does.
-5. **No app copy yet.** The guide reads every figure live from pipeline outputs
-   so that it cannot drift; a hardcoded 64.1 would break that guarantee. The
-   graduation path, if this becomes a standing claim, is for `concordance.json`
-   to be a pipeline output the guide reads — not a number typed into a page.
+5. ~~**No app copy yet.**~~ **Amended 2026-09-01, same day — see below.**
+   The findings are now on the map face, in the PDF and in the guide, reading
+   `concordance.json` live.
 
 ## Consequences
 
@@ -195,3 +194,52 @@ face-validity conversation, not as a change.
   is concordance with one charity's history. A second peer-support network,
   sited independently, would separate "agrees with AMC" from "agrees with where
   need is".
+
+---
+
+## Amendment, 2026-09-01 — decision 5 reversed
+
+Decision 5 originally withheld all app copy, reasoning that the guide promises
+every figure is read live from pipeline outputs and a hardcoded `64.1` would
+break that. **The reasoning about hardcoding was right; the conclusion did not
+follow.** Reading `concordance.json` when it exists is the same optional-diagnostic
+pattern `assurance_notes` already uses for `weights.json` and `sensitivity.json`
+— present, it supplies the figures; absent, its absence is itself reported. No
+drift is possible, because no number is typed anywhere.
+
+The original decision also required the file to be a **pipeline** output before
+it could be read. That bar was stricter than the architecture needs and stricter
+than the repo applies elsewhere: `_diagnostic_path` exists precisely so a config
+written before a diagnostic existed degrades the copy instead of taking down the
+map. Keeping the finding off the tool's face to satisfy it had a real cost —
+`CLAUDE.md`'s guardrail is that uncertainty is surfaced **on the map face**, and
+finding 2 is the most decision-relevant uncertainty this tool has. Someone
+reading the shortlist is reading a list of towns, which is exactly what the
+check could not corroborate. Withholding that is not caution.
+
+What shipped:
+
+- `caveats.py` gains `concordance_note` (an assurance note, alongside the
+  calibration veto and the stability verdict) and `catchment_note` (a data
+  caveat). Because that module is the single source for both renderers, the
+  findings reach the map face and the PDF together.
+- `catchment_note` states the pocket-vs-catchment limitation **unconditionally**
+  — it follows from the grain of the ranking, not from any measurement — and
+  adds the measured figures only when the diagnostic supplies them. It asserts
+  no percentage it has not read.
+- The guide gains §11, *Does it agree with where groups already are?*, written
+  as two headed halves so the one that failed is not a footnote to the one that
+  passed. The old §11 becomes §12.
+- Decision 4 stands: the spike is still not a pipeline step, and `python -m
+  src.pipeline` does not run it. Most builds will have no `concordance.json`,
+  and both notes say so plainly rather than falling silent.
+
+`tests/test_concordance_caveats.py` (14) covers both branches of both notes, an
+unreadable diagnostic, a config predating the key, and — the point of the file —
+that the copy never reports the flattering half alone.
+
+Writing those tests found a live bug in `assurance_notes`: it returned early when
+`sensitivity.json` was missing, so **any note appended after the stability check
+was silently dropped on exactly the builds with the least assurance to spare.**
+The early return is gone. Same shape as the two failures PR #4 closed: not a
+wrong number, but a true page with something missing from it.

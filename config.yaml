@@ -32,6 +32,9 @@ paths:
   occupation_diagnostic: data/output/occupation_diagnostic.json
   fact_tier: data/output/fact_tier.parquet
   blind_spot: data/output/blind_spot.json
+  # Written by spikes/group_need_concordance.py, NOT by the pipeline. Optional:
+  # the caveat copy reads it if present and says so plainly if not.
+  concordance: data/output/concordance.json
   report: data/output/amc_top20_report.pdf
 
 # ---------------------------------------------------------------------------

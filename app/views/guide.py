@@ -51,6 +51,10 @@ def _facts() -> dict:
     except Exception:
         f["blind_spot"] = {}
     try:
+        f["concordance"] = json.loads(cfg.path("concordance").read_text())
+    except Exception:
+        f["concordance"] = {}
+    try:
         score = pd.read_parquet(cfg.path("fact_score"))
         f["n_remote"] = int(score["is_remote"].fillna(False).astype(bool).sum())
     except Exception:
@@ -602,7 +606,96 @@ else:
     )
 
 # ---------------------------------------------------------------------------
-st.header("11. What this tool cannot tell you")
+st.header("11. Does it agree with where groups already are?")
+
+_con = F.get("concordance") or {}
+_b = _con.get("b_within_la") or {}
+_a = (_con.get("a_between_la") or {})
+_within_region = _a.get("within_region") or {}
+_mean, _p_region = _b.get("mean_percentile"), _within_region.get("p_one_sided")
+
+if _mean is None or _p_region is None:
+    st.markdown(
+        """
+        Groups already exist, opened over years by people weighing up things no
+        dataset holds. That makes them a way of checking this ranking: if it rates
+        the places they chose as unremarkable, something is wrong with it.
+
+        **That check has not been run on this build**, so nothing on this page has
+        been compared with a real siting decision.
+        """
+    )
+else:
+    _n = (_con.get("inputs") or {}).get("groups_assigned")
+    st.markdown(
+        f"""
+        Groups already exist — **{_n:,}** of them in England and Wales — opened over
+        years by people weighing up things no dataset holds: who offered a hall, who
+        volunteered, who knew someone. This ranking has never seen any of that. So
+        they are a way of checking it, and two different questions can be asked.
+        """
+    )
+
+    st.markdown("#### Which part of a town? Yes.")
+    st.markdown(
+        f"""
+        Take one council area at a time and ask where, inside it, the ranking says
+        need is highest. Then look at where the group actually is. On average the
+        group's own neighbourhood sits at the **{round(_mean * 100)}th rung out of a
+        hundred** within its council area. Picking a neighbourhood at random would
+        give the fiftieth. All three factors clear that bar separately, so this is
+        not one of them carrying the other two.
+
+        This comparison never puts one council area against another, so it cannot be
+        explained away by the charity happening to work in poorer parts of the
+        country.
+        """
+    )
+
+    st.markdown("#### Which town? Not shown.")
+    st.markdown(
+        """
+        The second question is whether the council areas that have a group score
+        higher than the ones that do not. Across the country they do — but the
+        charity grew outward from a single town, and in its home regions **every
+        council area already has a group**, so there is nothing left there to choose
+        between. Compare each region only with itself and the difference is no better
+        than chance.
+
+        This matters for how you read the shortlist, because **a shortlist is mostly
+        a list of towns**. The part of the judgement these lists are most often used
+        for is the part this check could not confirm. Deciding between towns is where
+        local knowledge is worth most.
+        """
+    )
+
+    _c = _con.get("c_venue_vs_catchment") or {}
+    if _c.get("venue_mean_national_percentile") and _c.get("catchment_mean_national_percentile"):
+        c1, c2 = st.columns(2)
+        c1.metric("Need where a group sits",
+                  f"{_c['venue_mean_national_percentile']:.0%}",
+                  help="Average national need score of the neighbourhood a group's "
+                       "venue is in.")
+        c2.metric("Need across who it reaches",
+                  f"{_c['catchment_mean_national_percentile']:.0%}",
+                  help="Average national need score of the neighbourhoods that group "
+                       "is the nearest one to.")
+        st.caption(
+            "A third thing the same check showed. A group's own neighbourhood scores "
+            "higher on need than the wider area it draws from — which is what you "
+            "would expect, since a ranking looks for the sharpest point and a group "
+            "serves the streets around it too. Read a high rank as 'there is a "
+            "concentration here', not as 'everyone this group reaches looks like this'."
+        )
+
+    st.caption(
+        "One thing this check deliberately does not use: the travel-time side of the "
+        "score. That side is built from these same groups, so every one of them sits "
+        "where travel time is best by definition. Only the need side is compared."
+    )
+
+# ---------------------------------------------------------------------------
+st.header("12. What this tool cannot tell you")
 
 _no_car = F.get("no_car_national")
 _no_car_line = (

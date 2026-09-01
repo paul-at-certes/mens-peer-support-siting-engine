@@ -24,12 +24,13 @@ Current figures, so you don't re-derive them:
 | routing | OSRM default, median nearest group 13.8 min |
 | stability | STABLE on all three axes |
 | concordance | within-LA 64.1st percentile (null 50, p < 5e-05); between-LA p = 0.21 once region is held constant |
-| tests | 113 |
+| tests | 127 |
 
 **Nothing in the model moved.** No weight, veto, rank, tier or output changed —
 `weights.json`, `sensitivity.json` and `fact_score.parquet` are untouched, so no
 re-run of `calibrate.py`, `sensitivity.py` or the pipeline is needed. The
-concordance work is a spike plus documentation, exactly as ADR 0003 decides.
+concordance work is a spike, documentation, and caveat copy — no scored column
+moved.
 
 ---
 
@@ -92,15 +93,24 @@ The artefact is large — the same 292 venue areas sit at the 68th percentile of
   repo claims only the former.
 - Concordance is **not** the back-test. `design.md` §7 check 4 needs opening
   dates and attendance figures. Do not let the two blur in any copy.
-- The concordance spike **stays a spike**: no pipeline step, no app copy. The
-  guide reads every figure live from outputs so it cannot drift, and a
-  hardcoded 64.1 would break that. Graduation path is in ADR 0003 decision 5.
+- The concordance spike **stays a spike**: it is not a pipeline step and
+  `python -m src.pipeline` does not run it. It *is* on the app face and in the
+  PDF, read live from `concordance.json` when that file exists and reported as
+  "not run" when it does not (ADR 0003 decision 5, amended the same day). No
+  figure is typed into a page. Do not reinstate the ban on app copy.
+- Both halves of the concordance finding go together. Copy that reports the
+  64th-percentile result without the untested between-town half is true
+  sentence by sentence and misleading overall; `tests/test_concordance_caveats.py`
+  exists to stop it.
 
 ---
 
 ## 3. Start here
 
 Nothing is blocked. Three candidates, in the order I'd take them:
+
+0. **Nothing is half-done.** The app, the PDF and the guide all carry the
+   concordance finding, both halves of it. The three below are new work.
 
 1. **The face-validity conversation (`design.md` §7 check 1).** This is now the
    highest-value move and ADR 0003 sharpened what it is *for*: the between-town
@@ -126,7 +136,7 @@ so the data to check concordance in Scotland exists the moment the surface does.
 ## 4. Running it
 
 ```bash
-.venv/bin/python -m pytest -q                        # 113 tests, no network
+.venv/bin/python -m pytest -q                        # 127 tests, no network
 .venv/bin/python -m src.pipeline                     # needs OSRM up, or set provider: haversine
 .venv/bin/python -m src.report                       # PDF -> data/output/
 .venv/bin/python spikes/group_need_concordance.py    # concordance; first run fetches ONSPD (~4 min)
