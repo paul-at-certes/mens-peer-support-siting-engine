@@ -94,6 +94,16 @@ def _harvest(cache: Path, delay: float = HARVEST_DELAY_SECONDS) -> Path:
                 for r in rows:
                     if "id" in r and r.get("lat") and r.get("lng"):
                         seen[str(r["id"])] = r
+            else:
+                # A 200 that is not a list of stores is a failed request that
+                # happened to parse -- {"success": false}, an error object, a
+                # rate-limit notice. Counting it keeps the guard below honest:
+                # otherwise the site can decline every request in valid JSON and
+                # the harvest reports 0.0% failed while caching a fraction of
+                # the groups, which is the silent understatement of provision
+                # this whole check exists to stop.
+                failed.append((round(lat, 3), round(lon, 3),
+                               f"not a list of stores: {str(rows)[:80]}"))
             time.sleep(delay)
             lon += 0.45
         lat += 0.30

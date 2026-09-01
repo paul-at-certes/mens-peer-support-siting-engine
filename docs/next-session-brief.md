@@ -1,7 +1,7 @@
 # Next session — where to pick up
 
-**Written 2026-08-31, updated 2026-09-01.** State of branch
-`soften-the-claim-and-clear-the-brief` (three commits off `8cde629`, in review).
+**Written 2026-08-31, updated 2026-09-01.** State of `main` after PR #4 merged,
+plus the one follow-up finding on `count-declined-harvest-requests` (PR #5).
 Everything here was verified against the real England & Wales run, not inferred.
 
 ---
@@ -10,7 +10,8 @@ Everything here was verified against the real England & Wales run, not inferred.
 
 Everything on the previous brief's list is closed. Both open judgement calls were
 decided (documentation-side, in both cases), and all six unfixed review findings
-are fixed. 98 tests pass, up from 90.
+are fixed. The branch's own review found one more, also fixed. 99 tests pass, up
+from 90.
 
 Current figures, so you don't re-derive them:
 
@@ -21,7 +22,7 @@ Current figures, so you don't re-derive them:
 | veto status | `collinearity` — deprivation cannot be shown positive in the multivariable fit |
 | routing | OSRM default, median nearest group 13.8 min |
 | stability | STABLE on all three axes |
-| tests | 98 |
+| tests | 99 |
 
 Unchanged by this session: every weight, every veto, every rank. Nothing in
 `weights.json`, `sensitivity.json` or `fact_score.parquet` moved, so no re-run of
@@ -84,6 +85,14 @@ A diagnostic written before `n_examined` existed degrades to "The clearest cases
   above a few percent means failures are clustered, and a clustered gap is a
   region of groups that silently vanished. Also: `open_status` now falls back to
   a Series, not a bare `"OPEN"` string that would hit `.map` and raise.
+- **`src/ingest/provision.py`, second pass** — found reviewing the above. The
+  failure count only saw requests that *raised*. A 200 whose body parses as JSON
+  but is not a list of stores — `{"success": false}`, an error object, a
+  rate-limit notice — fell through the `isinstance` check uncounted, so the site
+  could decline every request in valid JSON while the harvest reported 0.0%
+  failed and cached a fraction of the groups. Same silent understatement of
+  provision, through the one door the guard left open. Now counted, with the
+  first 80 characters of the response in the printed reason.
 - **`src/report.py`** — `_remote_and_blind_spot` is down from 17 positional
   parameters to 11; the six reportlab names are re-imported inside the function
   (the caller has already run `_require_reportlab()`, so it is a dict lookup).
@@ -97,9 +106,9 @@ A diagnostic written before `n_examined` existed degrades to "The clearest cases
 - **Both spec files** moved to `docs/` (per `CLAUDE.md`'s structure) and their
   status lines now say **built and shipped**. In-code references updated.
 
-New tests: `tests/test_silent_data_loss.py` (6) covers the two silent-failure
-paths and the missing-column fallback; `tests/test_occupation_diagnostic.py`
-gained 2 for the reframed caveat.
+New tests: `tests/test_silent_data_loss.py` (7) covers the two silent-failure
+paths, the declined-but-parseable response, and the missing-column fallback;
+`tests/test_occupation_diagnostic.py` gained 2 for the reframed caveat.
 
 ---
 
@@ -120,10 +129,13 @@ gained 2 for the reframed caveat.
 
 ## 4. Start here
 
-Nothing is outstanding. The branch is three commits — the softened claim, the
-reframed caveat, the review fixes — and the only open item is its review and
-merge. Once it lands, this file's §1 and §2 are history rather than work, and the
-next session starts from whatever you want to build.
+Nothing is outstanding. PR #4 — the softened claim, the reframed caveat, the
+review fixes — is merged. PR #5 is the one finding its own review turned up
+(§2, last bullet); once that lands, §1 and §2 are history rather than work, and
+the next session starts from whatever you want to build.
+
+Nothing here needs a re-run: no weight, veto or rank has moved since the figures
+in the table above were measured.
 
 ---
 

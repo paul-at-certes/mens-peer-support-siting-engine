@@ -95,6 +95,23 @@ def test_a_few_scattered_failures_still_harvest(tmp_path, monkeypatch, capsys):
     assert "grid requests" in out and "failed" in out
 
 
+def test_a_200_that_is_not_a_list_of_stores_counts_as_a_failure(tmp_path, monkeypatch):
+    """The site can decline every request in valid JSON. Without counting those,
+    the harvest reports 0.0% failed and caches a fraction of the groups -- the
+    silent understatement of provision the guard exists to stop."""
+    class _Declined:
+        def json(self):
+            return {"success": False, "message": "rate limited"}
+
+    monkeypatch.setattr(provision, "get", lambda url, **kw: _Declined())
+    cache = tmp_path / "amc_groups.json"
+
+    with pytest.raises(MissingSourceError, match="Harvest incomplete"):
+        provision._harvest(cache, delay=0)
+
+    assert not cache.exists()
+
+
 def test_the_failure_count_is_reported_even_when_nothing_failed(tmp_path, monkeypatch, capsys):
     _grid(monkeypatch)
     provision._harvest(tmp_path / "amc_groups.json", delay=0)
