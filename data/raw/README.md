@@ -36,6 +36,7 @@ file X here" message if a (non-automatable) source is ever missing.
 | Suicide by LA | `ingest/suicide_la.py` | Nomis API `NM_161_1` (ONS registrations), geography `TYPE434` | LA × cause × sex × age × year | **male, all ages, X60-X84 + Y10-Y34, 5-yr pooled, England & Wales**; denominator is `male_pop` from the population spine |
 | Car or van availability | `ingest/car_access.py` | Nomis `NM_2063_1` (Census 2021 TS045) | LSOA 2021 | no-car **households** ÷ all households; **descriptive context only — never enters a score** |
 | Rural-Urban Classification 2021 | `ingest/remoteness.py` | ONS Geo Portal `LSOA21_RUC21_EW_LU` (ArcGIS REST) | LSOA 2021 | settlement size × distance to a major town or city; the `*F1` codes are "remote". **Descriptive context only — never enters a score**; it decides which areas the remoteness *view* re-ranks |
+| Postcode → LSOA21 | `spikes/group_need_concordance.py` | ONS Geo Portal `ONS_Postcode_Directory_(May_2026)_for_the_United_Kingdom_(Hosted_Table)` (ArcGIS REST) | postcode | **not a pipeline input** — used only by the concordance spike to place group venues in a small area. Cached to `real/group_postcode_lsoa.csv`. The `pcds` key needs exactly one space before the last three characters; the AMC listing is hand-entered and ~2% arrives without it |
 | AMC group locations | `ingest/provision.py` | Andy's Man Club WP Store Locator (`admin-ajax.php`) | point | grid-harvested + deduped (~360 groups); **run by hand, throttled** — see above |
 
 ## Manual / not-yet-automated sources
