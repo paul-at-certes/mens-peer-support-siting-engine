@@ -10,6 +10,7 @@ A spike graduates by being **deleted** and replaced with a real module under
 | Spike | Commissioned by | Question | Verdict |
 |---|---|---|---|
 | `pt_evening_access.py` | `docs/adr/0002-public-transport-feasibility-spike.md` | Can a man get to a Monday-evening group by bus and back? | Data exists; not yet fit to score. See ADR 0002. |
+| `group_need_concordance.py` | `docs/adr/0003-concordance-with-existing-groups.md` | Does the need surface agree with where AMC already opened 354 groups? | Yes within a town (64.1st percentile vs a null of 50); **no evidence between towns** once region is held constant. See ADR 0003. |
 
 ## `pt_evening_access.py`
 
@@ -41,3 +42,44 @@ Read the limitations in the module docstring before quoting any number from it.
 The important ones: BODS is a **bus** feed and GB rail is effectively absent, so
 rural feasibility is understated; and walk access is straight-line, so
 walkability is overstated.
+
+## `group_need_concordance.py`
+
+```bash
+python spikes/group_need_concordance.py                 # the headline run
+python spikes/group_need_concordance.py --draws 20000   # tighter permutation p
+python spikes/group_need_concordance.py --refresh-onspd # re-fetch the postcode lookup
+```
+
+Answers the first question anyone asks of this tool: **does it agree with what
+we already know?** AMC has opened 354 groups over a decade of local judgement.
+The need surface has never seen any of them. Do they land where it says need is?
+
+It is **not** the back-test in `docs/design.md` §7 check 3 — that needs opening
+dates and attendance figures, which no open source carries and only AMC could
+supply. This measures *concordance*, which is weaker and available today.
+
+Everything it reports uses `need_index` and its components, never
+`priority_score`. The supply surface is built **from** these 354 groups, so
+scoring them against the priority surface would be marking the model's homework
+with its own answers.
+
+Four measurements, in increasing resistance to confounding:
+
+| | asks | confound it removes |
+|---|---|---|
+| **A** between LA | did they pick the higher-need towns? | run twice — the second permuting only within region, so founder geography is held constant |
+| **B** within LA | did they pick the higher-need neighbourhoods? | never compares one LA with another, so founder geography cannot touch it |
+| **C** venue vs catchment | is the venue's own area representative of who it serves? | a venue sits in a town centre with a hall to hire, not in anybody's home |
+| **D** by component | which part of the surface do their choices corroborate? | says whether concordance is deprivation alone |
+
+Groups are assigned to small areas **by postcode** through the ONS Postcode
+Directory (cached under `data/raw/real/`, git-ignored; the first run takes a few
+minutes). Nearest population-weighted centroid is computed too, purely as a
+cross-check, and the disagreement rate is printed — in a dense town the nearest
+centroid is routinely the next LSOA over, which is not good enough for
+measurement B.
+
+The statistics are unit-tested (`tests/test_concordance_spike.py`), including a
+calibration test that venues placed at random within their LA do **not** come
+out significant.

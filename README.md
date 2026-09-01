@@ -52,6 +52,16 @@ real sources swap in one at a time behind the same interfaces.
   roughly two to one, so the ranking structurally cannot surface them; the flag
   says so instead of leaving it as a caveat. Descriptive only — see
   `src/blindspot.py`.
+- **Checked against a decade of local judgement** — AMC's 354 existing groups
+  are placed by people, not by this model, so they are an independent test of
+  it. Within a local authority, a group's own small area averages the **64.1st
+  percentile** of need against a null of 50 (p < 5e-05); all three components
+  clear the null separately. **Between** local authorities the apparent
+  agreement is entirely regional and does not survive holding region constant
+  (p = 0.21) — so the surface is corroborated about *which part of a town*, and
+  remains untested about *which town*. Stated plainly because that second
+  question is the one a national shortlist is being asked
+  ([ADR 0003](docs/adr/0003-concordance-with-existing-groups.md)).
 - **Fully explainable** — every area carries a `factor_breakdown` JSON.
 
 ## Quick start

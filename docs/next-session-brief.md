@@ -1,120 +1,87 @@
 # Next session — where to pick up
 
-**Written 2026-08-31, updated 2026-09-01.** State of `main` after PR #4 merged,
-plus the one follow-up finding on `count-declined-harvest-requests` (PR #5).
+**Written 2026-08-31, rewritten 2026-09-01.** State of `main` after PR #5 merged,
+plus the concordance work on `backtest-concordance-with-existing-groups` (PR #6).
 Everything here was verified against the real England & Wales run, not inferred.
 
 ---
 
 ## Where things stand
 
-Everything on the previous brief's list is closed. Both open judgement calls were
-decided (documentation-side, in both cases), and all six unfixed review findings
-are fixed. The branch's own review found one more, also fixed. 99 tests pass, up
-from 90.
+v1's definition of done was already met before this session. This session added
+the validation the repo could not previously do: **does the surface agree with
+where AMC already opened groups?** It does, about neighbourhoods; it does not,
+about towns. See [ADR 0003](adr/0003-concordance-with-existing-groups.md).
 
 Current figures, so you don't re-derive them:
 
 | | |
 |---|---|
 | areas / LAs | 35,672 LSOAs, 331 local authorities |
+| existing groups | 354 harvested, 292 inside the England & Wales surface |
 | flagged blind spots | 285 (0 reach the per-capita shortlist under any configuration; **1** reaches the reach shortlist under some) |
 | veto status | `collinearity` — deprivation cannot be shown positive in the multivariable fit |
 | routing | OSRM default, median nearest group 13.8 min |
 | stability | STABLE on all three axes |
-| tests | 99 |
+| concordance | within-LA 64.1st percentile (null 50, p < 5e-05); between-LA p = 0.21 once region is held constant |
+| tests | 113 |
 
-Unchanged by this session: every weight, every veto, every rank. Nothing in
-`weights.json`, `sensitivity.json` or `fact_score.parquet` moved, so no re-run of
-`calibrate.py` or `sensitivity.py` was needed. `occupation_diagnostic.json` and
-the PDF were regenerated (the diagnostic gained one field; the PDF was rebuilt to
-exercise the changed `report.py` signature).
-
----
-
-## 1. What was decided, and what it cost
-
-### 1a. The "significantly protective" claim — softened, not refitted
-
-**Decision: soften.** The claim held only in the specification that pools
-England and Wales on a within-nation rescaled deprivation axis, and marginally
-there (p=0.044). The repo now claims what survives all three specifications:
-*deprivation cannot be shown to be positive once the other two are in the model.*
-The sign is stable everywhere; the significance is not.
-
-The refit table and the reason (`deprivation_proxy` averages 0.499 in both
-nations by construction while Wales' pooled male rate is 28% higher, so the
-pooled fit explains Welsh excess deaths with a variable flattened at the border)
-are now recorded in `docs/adr/0001-calibration-as-veto.md`, so the softening is
-evidenced rather than merely quieter. `CLAUDE.md`, `README.md` and
-`src/calibrate.py` carry the softened wording.
-
-The alternative — adding a Wales dummy to the fit — was not taken. It would have
-changed a diagnostic and forced a `sensitivity.py` re-run, to reach the same
-conclusion by a longer route: the argument for the declared-prior architecture
-rests on non-identification, which every specification agrees on.
-
-### 1b. `outvoted_note` no longer generalises from ten areas
-
-**Decision: reframe.** `occupation_diagnostic.run` now records `n_examined`
-alongside the ranks, and `caveats.outvoted_note` reads it: *"The ten clearest
-cases ... Those ten sit around 11,763rd of 35,672 here ... — where those
-particular areas land, rather than a measured claim about every place like
-them."* The general claim about the class is left to the blind-spot flag in the
-same paragraph, which tests all 35,672 areas.
-
-Widening the residual set was the alternative. It was not taken because a wider
-arbitrary set is still an arbitrary set: the flag is the part entitled to speak
-for the class, and it already does.
-
-A diagnostic written before `n_examined` existed degrades to "The clearest cases
-... Those few sit around", never to an invented number. Both paths are tested.
+**Nothing in the model moved.** No weight, veto, rank, tier or output changed —
+`weights.json`, `sensitivity.json` and `fact_score.parquet` are untouched, so no
+re-run of `calibrate.py`, `sensitivity.py` or the pipeline is needed. The
+concordance work is a spike plus documentation, exactly as ADR 0003 decides.
 
 ---
 
-## 2. Review findings — all fixed
+## 1. What was measured, and what it means
 
-- **`src/fetch.py`** — `nomis_csv_all` no longer caches an empty frame; it warns
-  and returns, so the caller's own empty check fires on a fresh miss instead of
-  on a poisoned cache. `cached_csv` and `arcgis_count` (both dead) are gone.
-- **`src/ingest/provision.py`** — `_harvest` counts failed grid requests, prints
-  the count and the first five with their coordinates, and raises
-  `MissingSourceError` above `HARVEST_MAX_FAILURE_RATE` (5%) **without writing
-  the cache**. The 5% bar is set from the grid's own overlap: a 25-mile radius on
-  a ~20–33km step means an isolated miss is covered by its neighbours, so a rate
-  above a few percent means failures are clustered, and a clustered gap is a
-  region of groups that silently vanished. Also: `open_status` now falls back to
-  a Series, not a bare `"OPEN"` string that would hit `.map` and raise.
-- **`src/ingest/provision.py`, second pass** — found reviewing the above. The
-  failure count only saw requests that *raised*. A 200 whose body parses as JSON
-  but is not a list of stores — `{"success": false}`, an error object, a
-  rate-limit notice — fell through the `isinstance` check uncounted, so the site
-  could decline every request in valid JSON while the harvest reported 0.0%
-  failed and cached a fraction of the groups. Same silent understatement of
-  provision, through the one door the guard left open. Now counted, with the
-  first 80 characters of the response in the printed reason.
-- **`src/report.py`** — `_remote_and_blind_spot` is down from 17 positional
-  parameters to 11; the six reportlab names are re-imported inside the function
-  (the caller has already run `_require_reportlab()`, so it is a dict lookup).
-  The style objects still come in as arguments — they are built once and must be
-  the same objects.
-- **`docs/design.md`** — §2 and §3 no longer state the superseded design. §2
-  reads "Check at LA level" with an amendment box pointing at ADR 0001; §3 now
-  says three weighted components, not four, explains that the suicide signal is
-  **not** a component and is male **all ages**, and describes the shipped
-  SMR-weighted occupation proxy rather than the pre-SMR one.
-- **Both spec files** moved to `docs/` (per `CLAUDE.md`'s structure) and their
-  status lines now say **built and shipped**. In-code references updated.
+`spikes/group_need_concordance.py` places all 354 AMC groups in a small area by
+postcode (ONS Postcode Directory, May 2026) and asks four questions. Full detail
+and the raw tables are in ADR 0003; the short version:
 
-New tests: `tests/test_silent_data_loss.py` (7) covers the two silent-failure
-paths, the declined-but-parseable response, and the missing-column fallback;
-`tests/test_occupation_diagnostic.py` gained 2 for the reframed caveat.
+- **Within a local authority, the surface and AMC agree.** A venue's own small
+  area averages the 64.1st percentile of `need_index` among its LA's areas
+  (null 50, p < 5e-05, 20,000 draws). 71.2% are above their LA's midpoint. This
+  never compares one LA with another, so founder geography cannot explain it.
+- **Between local authorities, the agreement is entirely regional.** The
+  national result (+0.064, p < 5e-05) collapses to **p = 0.21** when the
+  permutation is restricted to within-region. AMC's heartland is saturated —
+  North East 12/12 LAs, Yorkshire and The Humber 21/21 — and where there *is* a
+  choice the direction is mixed, negative in Wales, the South East and the North
+  West. **The between-town judgement is untested**, and that is the judgement a
+  national shortlist is being asked for.
+- **A venue's own area over-states its catchment by 10 points.** Venue areas
+  average the 68.0th national need percentile; the areas they are nearest to
+  (median catchment 54 areas) average the 57.7th. Now a stated limitation in
+  `design.md` §8: a rank names a pocket, a group serves a catchment.
+- **All three components are corroborated**, in almost the inverse of their
+  declared weights — isolation 68.0, deprivation 62.2, occupation 57.5. Left
+  alone deliberately: ADR 0001 forbids a fitted quantity setting a declared
+  prior, and this is one. It is a question for the face-validity conversation.
+
+### The trap, and why the numbers use `need_index`
+`priority_score` subtracts a supply surface built **from these same groups**.
+The artefact is large — the same 292 venue areas sit at the 68th percentile of
+`need_index` and the **25th** of `priority_score`. Everything reported uses
+`need_index` and its components only.
+
+### Two assignment findings worth remembering
+- **Nearest population-weighted centroid agrees with the postcode only 47.9% of
+  the time.** It is the obvious shortcut for placing a point in an LSOA and it
+  does not work at neighbourhood grain. Nothing in `src/` does this (the
+  pipeline uses group coordinates for *distance* only) — keep it that way.
+- **Six group postcodes are hand-entered without their space** (`SS155NX`).
+  An exact join drops them silently, and a dropped group is indistinguishable
+  from a Scottish one. `normalise_postcode` handles it; recovered 2 E&W groups.
+  It deliberately refuses to mangle a truncated entry into a plausible match.
 
 ---
 
-## 3. Settled — do not re-litigate
+## 2. Settled — do not re-litigate
 
 - Weights are a **declared prior**; calibration vetoes, never supplies (ADR 0001).
+  **This now explicitly covers the concordance ranking in finding 4** — it is a
+  fitted quantity wearing a different hat.
 - No small-area suicide rate, ever. Outcome stays at LA grain.
 - Within-nation normalisation for deprivation.
 - `no_car_share`, RUC21 and the blind-spot flag are **descriptive**, attached
@@ -122,29 +89,47 @@ paths, the declined-but-parseable response, and the missing-column fallback;
 - Public transport is measured and deliberately unscored (ADR 0002).
 - Suicide counts are male **all ages**, not working age — measured, not assumed.
 - The deprivation coefficient's sign is stable and its significance is not; the
-  repo claims only the former (§1a). The stronger claim is not to be reinstated
-  without the nation-adjusted refit that would justify it.
+  repo claims only the former.
+- Concordance is **not** the back-test. `design.md` §7 check 4 needs opening
+  dates and attendance figures. Do not let the two blur in any copy.
+- The concordance spike **stays a spike**: no pipeline step, no app copy. The
+  guide reads every figure live from outputs so it cannot drift, and a
+  hardcoded 64.1 would break that. Graduation path is in ADR 0003 decision 5.
 
 ---
 
-## 4. Start here
+## 3. Start here
 
-Nothing is outstanding. PR #4 — the softened claim, the reframed caveat, the
-review fixes — is merged. PR #5 is the one finding its own review turned up
-(§2, last bullet); once that lands, §1 and §2 are history rather than work, and
-the next session starts from whatever you want to build.
+Nothing is blocked. Three candidates, in the order I'd take them:
 
-Nothing here needs a re-run: no weight, veto or rank has moved since the figures
-in the table above were measured.
+1. **The face-validity conversation (`design.md` §7 check 1).** This is now the
+   highest-value move and ADR 0003 sharpened what it is *for*: the between-town
+   judgement is the part the data cannot check, and the top of the shortlist is
+   mostly towns AMC is not in. Take the PDF (`python -m src.report`), the top 20,
+   and finding 4's specific question — the weighting leans hardest on
+   deprivation, AMC's own choices lean hardest on isolation. Who is right?
+2. **Ask AMC for opening dates.** The single piece of non-open data that would
+   most improve the tool: it turns concordance into a real back-test, closing
+   the last open check in §7. Worth asking for even if the answer is slow.
+3. **An occupation-led view.** 285 areas carry at least national-average
+   occupational risk while `need_index` puts them in its bottom half; the
+   weighting outvotes occupation roughly two to one, so they structurally
+   cannot surface. Today that is a flag saying "we know". The remoteness view
+   is the precedent for re-ranking a subset without re-scoring it. Finding 4
+   makes this more interesting, not less: occupation is corroborated, just least.
+
+Scotland/NI remain correctly stubbed. 61 of the 354 groups are already up there,
+so the data to check concordance in Scotland exists the moment the surface does.
 
 ---
 
-## 5. Running it
+## 4. Running it
 
 ```bash
-.venv/bin/python -m pytest -q            # 98 tests, no network
-.venv/bin/python -m src.pipeline         # needs OSRM up, or set provider: haversine
-.venv/bin/python -m src.report           # PDF -> data/output/
+.venv/bin/python -m pytest -q                        # 113 tests, no network
+.venv/bin/python -m src.pipeline                     # needs OSRM up, or set provider: haversine
+.venv/bin/python -m src.report                       # PDF -> data/output/
+.venv/bin/python spikes/group_need_concordance.py    # concordance; first run fetches ONSPD (~4 min)
 .venv/bin/streamlit run app/streamlit_app.py
 ```
 
