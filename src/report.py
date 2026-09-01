@@ -343,8 +343,7 @@ def run(cfg: Config) -> "Path":  # type: ignore[name-defined]
     # analysis: the remoteness view re-ranks a subset on the same per-capita
     # score, and the flag is a test applied to a finished need_index.
     _remote_and_blind_spot(cfg, df, story, top_n, h2, foot, reason_num, reason,
-                           cell, cell_b, NAVY, colors, mm, Paragraph, Spacer,
-                           Table, TableStyle)
+                           cell, cell_b, NAVY)
 
     # --- how the weights were set, and did the checks pass? -----------------
     # Copy comes from src/caveats.py, shared with the Streamlit map face so the
@@ -407,14 +406,22 @@ def _across_config_clause(cfg, ranking: dict) -> str:
 
 
 def _remote_and_blind_spot(cfg, df, story, top_n, h2, foot, reason_num, reason,
-                           cell, cell_b, NAVY, colors, mm, Paragraph, Spacer,
-                           Table, TableStyle) -> None:
+                           cell, cell_b, NAVY) -> None:
     """The remoteness view and the blind-spot flag, as a closing PDF section.
 
     Both exist because the main ranking structurally cannot surface these areas
-    — see rural-lens-spec.md. Both are descriptive: this function reads columns
+    — see docs/rural-lens-spec.md. Both are descriptive: this function reads columns
     and prints them, and computes no score of any kind.
+
+    The reportlab names are re-imported here rather than passed in: the caller
+    has already run _require_reportlab() by the time it calls this, so the
+    module is loaded and the import is a dict lookup. The styles above (h2,
+    cell, NAVY ...) still come in as arguments because they are built once by
+    the caller and must be the same objects.
     """
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
     has_remote = "is_remote" in df.columns and df["is_remote"].notna().any()
     bs_path = cfg.path("blind_spot")
     bs = json.loads(bs_path.read_text()) if bs_path.exists() else {}

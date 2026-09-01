@@ -57,13 +57,6 @@ def download_to(url: str, dest: Path, *, params: dict | None = None,
     return dest
 
 
-def cached_csv(url: str, dest: Path, *, params: dict | None = None,
-               force: bool = False, **read_csv_kwargs) -> pd.DataFrame:
-    """Download a CSV (cached) and return it as a DataFrame."""
-    download_to(url, dest, params=params, force=force)
-    return pd.read_csv(dest, **read_csv_kwargs)
-
-
 # ---------------------------------------------------------------------------
 # ArcGIS REST FeatureServer paginator (ONS Open Geography Portal)
 # ---------------------------------------------------------------------------
@@ -115,13 +108,6 @@ def arcgis_query_all(layer_url: str, *, where: str = "1=1", out_fields: str = "*
     return pd.DataFrame(rows)
 
 
-def arcgis_count(layer_url: str, where: str = "1=1") -> int:
-    query_url = layer_url.rstrip("/") + "/query"
-    data = get(query_url, params={"where": where, "returnCountOnly": "true",
-                                  "f": "json"}).json()
-    return int(data.get("count", 0))
-
-
 # ---------------------------------------------------------------------------
 # Nomis .data.csv paginator (Census 2021 tables)
 # ---------------------------------------------------------------------------
@@ -151,6 +137,13 @@ def nomis_csv_all(dataset_url: str, params: dict, *, page_size: int = 25000,
         offset += len(chunk)
 
     df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if df.empty:
+        # Never cache nothing. One transient Nomis blip would otherwise write a
+        # zero-row CSV that every later run reads in preference to the network,
+        # turning a momentary outage into a permanent silent one. The caller's
+        # own empty check then fires on a fresh, honest miss instead.
+        print(f"[fetch] WARNING: {dataset_url} returned no rows; not caching.")
+        return df
     if cache_path is not None:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(cache_path, index=False)

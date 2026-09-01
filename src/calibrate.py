@@ -6,8 +6,10 @@ the scoring weights. That does not survive contact with the data:
 
   * With 331 LAs and three mutually collinear proxies (deprivation correlates
     0.72 with isolation and 0.63 with occupation at LA level) the model does not
-    identify the weights. Deprivation comes out significantly *protective* in
-    the multivariable fit — collinearity, not epidemiology.
+    identify the weights. Deprivation cannot be shown to be positive once the
+    other two are in the model: its multivariable coefficient is negative in
+    every specification tested, significantly so in the pooled one we ship.
+    Collinearity, not epidemiology — on its own the proxy is positive.
   * Measured on the real output, equal weights disagrees with each fitted scheme
     about as much as the fitted schemes disagree with each other, while the
     choice still moves up to 12 of the top 20 areas. That is a consequential

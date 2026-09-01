@@ -176,7 +176,7 @@ Key real-data honesty notes (also surfaced on the map face):
   for roughly three times the average and corporate managers under a third. The
   sub-major mix is only published at MSOA, so neighbourhoods within one MSOA
   share an answer for *which* trades their men do and differ only in how many —
-  see `src/ingest/occupation.py` and `occupational-risk-layer-spec.md`.
+  see `src/ingest/occupation.py` and `docs/occupational-risk-layer-spec.md`.
   **Living-alone** is a one-person-household share (no sex-broken figure exists
   at LSOA).
 - **Travel time is car-only.** Public transport is not modelled, and that bites
@@ -250,9 +250,9 @@ occupation / 0.25 isolation) and are applied to within-nation percentile ranks.
 
 The reason is in [ADR 0001](docs/adr/0001-calibration-as-veto.md): at LA level
 the three proxies are mutually collinear (deprivation correlates 0.72 with
-isolation, 0.63 with occupation), so the multivariable fit returns deprivation as
-significantly *protective*, and equal weights disagrees with each fitted scheme
-about as much as they disagree with each other. The model cannot identify these
+isolation, 0.63 with occupation), so the multivariable fit cannot show
+deprivation to be positive at all, and equal weights disagrees with each fitted
+scheme about as much as they disagree with each other. The model cannot identify these
 weights — but the choice still moves up to 12 of the top 20 areas. So we state
 the weights, defend them, and use the fit to **veto** any the data contradicts.
 

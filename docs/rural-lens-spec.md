@@ -1,7 +1,9 @@
 # Rural Lens + Occupational Blind-Spot Flag — Implementation Spec
 
 **Project:** Men's Peer-Support Siting Engine (see `CLAUDE.md`)
-**Status:** Scoped, measured, not built. All figures below verified 2026-08-31.
+**Status:** **Built and shipped** (2026-08-31). Figures below verified 2026-08-31, before
+the build; the run's own current figures are in `docs/next-session-brief.md`. Read this as
+the specification the shipped view and flag were built to, not as outstanding work.
 **Scope:** Two things only — a **view** and a **flag**. No weight changes.
 
 ---
@@ -11,7 +13,7 @@
 - `CLAUDE.md` — the brief, the locked decisions, the guardrails.
 - `docs/adr/0001-calibration-as-veto.md` — why weights are a declared prior and
   a fitted quantity may never set them.
-- `occupational-risk-layer-spec.md` §10 and §11 — the work this follows from.
+- `occupational-risk-layer-spec.md` (alongside this file) §10 and §11 — the work this follows from.
 - `src/score.py` — note how `no_car_share` is attached *after* scoring,
   deliberately outside `prepare_components`, so it cannot reach a rank. Both
   things built here follow that precedent.

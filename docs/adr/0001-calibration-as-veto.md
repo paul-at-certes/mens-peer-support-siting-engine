@@ -15,10 +15,32 @@ Measured against the England & Wales data, that does not hold up.
 
 **The model does not identify the weights.** At LA level the proxies are
 mutually collinear — deprivation correlates 0.72 with isolation and 0.63 with
-occupation. Deprivation therefore comes out *significantly protective* in the
-multivariable fit (rate ratio 0.93, CI excluding 1) while being positively
+occupation. Deprivation therefore **cannot be shown to be positive once the
+other two are in the model** — its multivariable coefficient is negative in every
+specification tested (rate ratio 0.93 as shipped) while it is positively
 associated on its own (RR 1.11). That is a collinearity artefact, not
 epidemiology, and it zeroes deprivation under a coefficients-as-weights rule.
+
+*How far that negative sign goes, measured 2026-09-01.* `deprivation_proxy` is
+the only proxy entering the LA fit on a within-nation rescaled axis: it averages
+0.499 in both nations by construction, while Wales' pooled male rate is 28%
+higher than England's (88.8 vs 69.4 per 100k). The pooled fit is thus asked to
+explain Welsh excess deaths with a variable flattened at the border, which is the
+specification where the negative coefficient is largest and its interval clears
+zero.
+
+| specification | deprivation coef | 95% CI | p |
+|---|---|---|---|
+| pooled E+W (as shipped) | −0.045 | [−0.088, −0.001] | 0.044 |
+| England only (n=309) | −0.048 | [−0.097, +0.001] | 0.056 |
+| pooled + Wales dummy | −0.035 | [−0.080, +0.010] | 0.126 |
+
+The sign is stable across all three; the significance is not. So this repo claims
+only what survives all three — deprivation cannot be shown to be positive in the
+multivariable fit — and not the stronger "significantly protective", which holds
+in the pooled specification and marginally there. Either reading supports the
+same conclusion, and neither changes a weight or a veto: the veto is univariate,
+where all three proxies are firmly positive.
 
 **The choice was being made on evidence that does not support it.** Ranking
 35,672 LSOAs under each defensible weighting and comparing top-20 shortlists:

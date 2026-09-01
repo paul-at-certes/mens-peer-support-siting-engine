@@ -70,7 +70,7 @@ SMR_URL = ("https://www.ons.gov.uk/file?uri=/peoplepopulationandcommunity/"
 SMR_SHEET = "Table 3"          # sub-major groups, males and females, 20-64
 SMR_HEADER_ROW = 5
 
-# Weight rule (see occupational-risk-layer-spec.md 4.3). A CI spanning 100 means
+# Weight rule (see docs/occupational-risk-layer-spec.md 4.3). A CI spanning 100 means
 # "no evidence this group differs from the working-age male average", so the
 # group takes the NEUTRAL weight. It deliberately does NOT fall back to the
 # parent major group: major group 9 is 144 almost entirely because of group 91

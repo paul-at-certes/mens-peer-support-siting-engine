@@ -51,6 +51,14 @@ HARVEST_NAME = "amc_groups.json"
 # refresh you need roughly never, against a charity's site. See the module
 # docstring.
 HARVEST_DELAY_SECONDS = 0.5
+# Share of grid requests allowed to fail before the harvest is refused. The grid
+# overlaps heavily (25-mile radius on a ~20-33km step), so one isolated miss is
+# usually covered by its neighbours; a rate above this means failures are
+# clustered, and a clustered gap is a region of groups that silently went
+# missing. Missing groups make areas look underserved, which moves the
+# shortlist, so this is the one place a network error could change a number
+# without saying so.
+HARVEST_MAX_FAILURE_RATE = 0.05
 
 
 def _raw_path(cfg: Config) -> Path:
@@ -67,16 +75,20 @@ def _harvest(cache: Path, delay: float = HARVEST_DELAY_SECONDS) -> Path:
     print(f"[provision] harvesting AMC group finder (WP Store Locator grid), "
           f"{delay}s between requests. This takes a few minutes by design ...")
     seen: dict[str, dict] = {}
+    attempted = 0
+    failed: list[tuple[float, float, str]] = []
     lat = 49.9
     while lat <= 59.0:
         lon = -8.2
         while lon <= 1.8:
+            attempted += 1
             try:
                 rows = get(WPSL_URL, params={
                     "action": "store_search", "lat": round(lat, 3), "lng": round(lon, 3),
                     "max_results": 50, "radius": 25,
                 }).json()
-            except Exception:
+            except Exception as exc:  # noqa: BLE001
+                failed.append((round(lat, 3), round(lon, 3), f"{type(exc).__name__}: {exc}"))
                 rows = []
             if isinstance(rows, list):
                 for r in rows:
@@ -85,6 +97,22 @@ def _harvest(cache: Path, delay: float = HARVEST_DELAY_SECONDS) -> Path:
             time.sleep(delay)
             lon += 0.45
         lat += 0.30
+    # Say what did not come back, always -- a partial harvest is otherwise
+    # indistinguishable from a country with fewer groups in it.
+    rate = len(failed) / attempted if attempted else 0.0
+    print(f"[provision] {attempted} grid requests, {len(failed)} failed ({rate:.1%})")
+    for lat_f, lon_f, why in failed[:5]:
+        print(f"[provision]   failed at {lat_f}, {lon_f}: {why}")
+    if len(failed) > 5:
+        print(f"[provision]   ... and {len(failed) - 5} more")
+    if rate > HARVEST_MAX_FAILURE_RATE:
+        raise MissingSourceError(
+            f"Harvest incomplete: {len(failed)} of {attempted} grid requests failed "
+            f"({rate:.1%}, limit {HARVEST_MAX_FAILURE_RATE:.0%}).\n"
+            f"  Nothing has been cached. A partial harvest would understate provision,\n"
+            f"  which makes areas look underserved and moves the shortlist.\n"
+            f"  Check the site is up and re-run:  python -m src.ingest.provision")
+
     records = list(seen.values())
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps(records))
@@ -114,7 +142,10 @@ def _build_real(cfg: Config, dest: Path) -> Path:
         "name": df.get("name", df.get("store")),
         "lon": pd.to_numeric(df["lng"], errors="coerce"),
         "lat": pd.to_numeric(df["lat"], errors="coerce"),
-        "status": df.get("open_status", "OPEN").map(
+        # Series fallback, not a bare "OPEN": df.get returns the default
+        # verbatim, so a str default would hit .map and raise AttributeError on
+        # the one run where the harvest stops carrying the column.
+        "status": df.get("open_status", pd.Series("OPEN", index=df.index)).map(
             lambda s: "active" if str(s).upper() == "OPEN" else "inactive"),
         "postcode": df.get("postcode"),
     }).dropna(subset=["lon", "lat"])

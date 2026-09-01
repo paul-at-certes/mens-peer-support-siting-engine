@@ -3,7 +3,7 @@
 Four things are worth testing here, and the second is the one that matters.
 
 1. The flag's threshold logic, including both boundaries. The threshold is a
-   claim about meaning (rural-lens-spec.md 5, src/blindspot.py) and a test is
+   claim about meaning (docs/rural-lens-spec.md 5, src/blindspot.py) and a test is
    the only thing that stops it drifting into a tuned number later.
 2. **Neither addition can reach a score.** Both are descriptive, and the whole
    design rests on that: remoteness is deliberately kept out of need_index
@@ -178,7 +178,7 @@ def test_unrecognised_class_code_fails_loudly():
 
 # --- 5. the caveat that became false ---------------------------------------
 # "What this list will not show you" ended '...This list will not surface them.'
-# The flag makes that false. rural-lens-spec.md 5.4 requires it rewritten, not
+# The flag makes that false. docs/rural-lens-spec.md 5.4 requires it rewritten, not
 # appended to, and this project has shipped stale caveat copy twice already.
 
 def _copy_cfg(tmp_path):

@@ -2,7 +2,9 @@
 
 **Project:** Men's Peer-Support Siting Engine
 **Layer:** Male occupational composition index (`occupation_proxy`), England & Wales
-**Status:** Design questions resolved 2026-08-31. Ready to implement.
+**Status:** **Built and shipped** (2026-08-31). Design questions resolved 2026-08-31; the
+implementation is `src/ingest/occupation.py`. Read this as the specification it was built
+to, not as outstanding work.
 **Supersedes:** v1 of this file. What changed and why is in §2.
 
 ---
