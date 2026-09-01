@@ -25,11 +25,13 @@ This is the defining methodological challenge.
 
 Naively joining LA suicide rates onto LSOAs would fabricate a resolution the outcome data does not have. The resolution is a **two-level model**:
 
-1. **Calibrate at LA level.** Aggregate the small-area proxies up to LA; learn how strongly each predicts the (real, coarse) suicide signal.
-2. **Apply at small-area level.** Use the learned weights on the small-area proxies to produce a latent `need_index` everywhere, including where no outcome data exists.
+1. **Check at LA level.** Aggregate the small-area proxies up to LA and fit them against the (real, coarse) suicide signal.
+2. **Apply at small-area level.** Use the **declared** weights (`config.yaml` `scoring.component_weights`) on the small-area proxies to produce a latent `need_index` everywhere, including where no outcome data exists.
 3. **Net off supply.** Subtract an accessibility-based `supply_index` at small-area level to obtain `priority_score`.
 
-The outcome data thus does only what it can honestly support — weighting and validation — and is never interpolated to a false resolution.
+> **Amended 2026-08-31 — see §4's amendment box and `docs/adr/0001-calibration-as-veto.md`.** Step 1 originally read *"Calibrate at LA level ... learn how strongly each predicts"*, and step 2 originally applied *"the learned weights"*. On the real data the LA fit does not identify those weights, so it now **vetoes** declared weights the data contradicts rather than supplying them. The rest of this section is unchanged, and the constraint it exists for is absolute: **no small-area suicide rate is ever invented.**
+
+The outcome data thus does only what it can honestly support — checking and validation — and is never interpolated to a false resolution.
 
 ### Cross-border non-comparability
 
@@ -43,16 +45,20 @@ The four UK nations publish **separate, non-comparable** deprivation indices (En
 
 ## 3. Inputs and the latent-need construct
 
-`need_index` is a weighted composite of four standardised components, chosen because each is an established, area-measurable correlate of male suicide risk and of the kind of distress peer support addresses.
+`need_index` is a weighted composite of **three** standardised components, chosen because each is an established, area-measurable correlate of male suicide risk and of the kind of distress peer support addresses. The suicide signal is **not** one of them — see below the table.
 
 | Component | Measure | Rationale |
 |---|---|---|
 | **Deprivation** | IMD **income** + **employment** domains (not the headline index) | Working-age male suicide tracks economic insecurity — unemployment, unmanageable debt — more tightly than the composite IMD, which is diluted by domains like education and crime. |
-| **High-risk occupation** | Male employment share in elevated-risk SOC-2020 groups (construction building trades, elementary construction, agriculture, process/plant operatives) | These occupations carry markedly elevated suicide risk and concentrate the masculine-norm, low-help-seeking population peer support is designed to reach. |
+| **High-risk occupation** | Male occupational **composition** weighted by observed male suicide SMRs: `Σ_g male_share_g × SMR_g / 100` over the 26 SOC-2020 sub-major groups (ONS *Suicide by occupation*, 2011–2015, Table 3) | These occupations carry markedly elevated suicide risk and concentrate the masculine-norm, low-help-seeking population peer support is designed to reach. Weighting by the published SMRs rather than counting a hand-picked set of groups keeps the choice of groups out of the analyst's hands. *(Amended 2026-08-31: this row previously described the pre-SMR proxy — a flat share of four hand-picked major groups. See `src/ingest/occupation.py` and `occupational-risk-layer-spec.md`.)* |
 | **Isolation** | Male single/separated and living-alone proxies (Census household/relationship) | Relationship breakdown and social isolation are recurrent antecedents; peer connection is the direct counter. |
-| **Suicide signal** | LA-level pooled male working-age rate, mapped down | Anchors the index to the observed outcome at the only resolution it exists. Carried at low weight relative to the fine-grained proxies, which generalise better than chasing historical counts. |
 
-**Why not just rank by historical deaths?** Because that chases the past, is hostage to small-number noise and registration lag, and offers no signal where deaths haven't yet been recorded. A calibrated proxy projects to where the *next* need is.
+**The suicide signal is not a fourth component.** This table previously carried a *"LA-level pooled male working-age rate, mapped down"* row at low weight. It is not in the shipped index, and mapping it down would be exactly the fabricated resolution §2 forbids. The signal stays at LA level, as the outcome the fit in §4 checks the declared weights against. Two things about it, both measured rather than assumed:
+
+- It is male deaths at **all ages**, not working age. The offset is that same published table's own denominator, so numerator and denominator cover the same population; pairing an age-10+ numerator with a 16–64 denominator was biasing the fit with local age structure (§4).
+- It is **England-only**, so the check is non-blocking by design: Wales must stay rankable without it.
+
+**Why not just rank by historical deaths?** Because that chases the past, is hostage to small-number noise and registration lag, and offers no signal where deaths haven't yet been recorded. The proxy index projects to where the *next* need is.
 
 **Occupation caveat.** Census occupation is **residence-based**, not workplace-based — it tells you where high-risk workers *live*, which is appropriate for siting a community group, but is not the same as where they work. Note this explicitly; do not present it as a workplace map.
 

@@ -176,7 +176,7 @@ Key real-data honesty notes (also surfaced on the map face):
   for roughly three times the average and corporate managers under a third. The
   sub-major mix is only published at MSOA, so neighbourhoods within one MSOA
   share an answer for *which* trades their men do and differ only in how many —
-  see `src/ingest/occupation.py` and `occupational-risk-layer-spec.md`.
+  see `src/ingest/occupation.py` and `docs/occupational-risk-layer-spec.md`.
   **Living-alone** is a one-person-household share (no sex-broken figure exists
   at LSOA).
 - **Travel time is car-only.** Public transport is not modelled, and that bites

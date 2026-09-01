@@ -170,7 +170,7 @@ def generate(cfg, out_dir: Path) -> dict[str, Path]:
 
             # Rural-Urban Classification. Cosmetic: drawn from the real national
             # class shares so the remoteness view has a plausible mix to re-rank
-            # and the pipeline runs with no network (rural-lens-spec.md 5.6). The
+            # and the pipeline runs with no network (docs/rural-lens-spec.md 5.6). The
             # fixture makes no attempt to reproduce the real correlation between
             # remoteness and the proxies — it exists so the code path runs, not so
             # the numbers mean anything.

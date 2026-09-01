@@ -11,7 +11,7 @@ WHAT IT MARKS
 
 An area whose men do work carrying at least the national-average male suicide
 risk, and which the composite need index nonetheless places in its bottom half.
-That is the blind spot described in occupational-risk-layer-spec.md 11.1: with
+That is the blind spot described in docs/occupational-risk-layer-spec.md 11.1: with
 deprivation at 0.40 and isolation at 0.25 against occupation's 0.35, the two of
 them outvote occupation nearly two to one, and areas that score high on
 occupation alone tend to score low on both. Occupation cannot carry an area on
