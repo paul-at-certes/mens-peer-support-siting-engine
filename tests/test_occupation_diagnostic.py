@@ -95,3 +95,36 @@ def test_caveat_quotes_the_diagnostic_when_it_exists(tmp_path):
     assert "Powys, Richmondshire, Eden" in body
     assert "11,763rd" in body and "5,203rd" in body
     assert "11,763th" not in body
+
+
+# --- what those ranks are a claim ABOUT ------------------------------------
+# The median and best rank come from the handful of areas with the largest
+# occupation residual. Printed bare, they read as a fact about the whole class
+# of outvoted places. The general claim belongs to the blind-spot flag, which
+# tests every area; this paragraph must say which areas it is describing.
+
+def test_caveat_says_how_many_areas_the_ranks_describe(tmp_path):
+    cfg = _cfg(tmp_path)
+    cfg.path("occupation_diagnostic").write_text(_json.dumps({"outvoted": {
+        "n_areas": 35672, "median_rank": 11763, "best_rank": 5203, "n_examined": 10,
+        "example_las": ["Powys", "Richmondshire", "Eden"],
+    }}))
+    body = outvoted_note(cfg)
+    assert "ten clearest cases" in body
+    assert "Those ten sit around" in body
+    # And it must disclaim the generalisation it used to invite.
+    assert "rather than a measured claim about every place like them" in body
+
+
+def test_caveat_names_no_count_it_was_not_given(tmp_path):
+    """Diagnostics written before the count existed must degrade to a vaguer
+    sentence, never to a made-up number."""
+    cfg = _cfg(tmp_path)
+    cfg.path("occupation_diagnostic").write_text(_json.dumps({"outvoted": {
+        "n_areas": 35672, "median_rank": 11763, "best_rank": 5203,
+        "example_las": ["Powys"],
+    }}))
+    body = outvoted_note(cfg)
+    assert "Those few sit around" in body
+    assert "clearest cases" in body
+    assert "rather than a measured claim about every place like them" in body

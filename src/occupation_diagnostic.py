@@ -14,7 +14,7 @@ are (the places the factor is actually adding something).
     the input to a declared-prior architecture, which is exactly what
     docs/adr/0001-calibration-as-veto.md rules out, and it would residualise
     occupation against deprivation while leaving isolation raw. See
-    occupational-risk-layer-spec.md 6.1.
+    docs/occupational-risk-layer-spec.md 6.1.
 
 Isolation is measured the same way, because singling out occupation would be an
 arbitrary choice about which factor has to justify itself.
@@ -149,6 +149,12 @@ def run(cfg: Config | None = None) -> dict:
             ex = m.nsmallest(1, "rank").iloc[0]
             report["outvoted"] = {
                 "n_areas": int(len(df)),
+                # How many areas these figures actually describe. The copy reads
+                # it and says so: the median and best rank below are a fact
+                # about these few, not about the class of outvoted places. The
+                # claim about the class is the blind-spot flag's, which tests
+                # every area.
+                "n_examined": int(len(m)),
                 "median_rank": int(m["rank"].median()),
                 "best_rank": int(m["rank"].min()),
                 # Strongest-first, deduped — not alphabetical, so the copy names

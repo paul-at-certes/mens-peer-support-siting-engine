@@ -56,6 +56,15 @@ def _ordinal(n: int) -> str:
     return f"{n:,}{suffix}"
 
 
+_NUMBER_WORDS = ("", "one", "two", "three", "four", "five", "six", "seven",
+                 "eight", "nine", "ten", "eleven", "twelve")
+
+
+def _count(n: int) -> str:
+    """Small counts read as words, so 'the ten clearest cases' is a sentence."""
+    return _NUMBER_WORDS[n] if 1 <= n < len(_NUMBER_WORDS) else f"{n:,}"
+
+
 def _words(body: str) -> str:
     """Collapse an indented triple-quoted block into one clean paragraph."""
     return " ".join(body.split())
@@ -151,13 +160,22 @@ def outvoted_note(cfg: Config) -> str:
     ov = json.loads(diag.read_text()).get("outvoted") if diag and diag.exists() else None
     if ov:
         las = ", ".join(ov["example_las"])
+        # These ranks come from the handful of areas with the largest occupation
+        # residual, so the sentence says which areas it is describing. Widening
+        # that set is not what makes the general claim safe: the blind-spot flag
+        # below tests every area, and that is the one entitled to speak for the
+        # class. Older diagnostics carry no count, so the copy names none.
+        n_ex = ov.get("n_examined")
+        head = f"The {_count(n_ex)} clearest cases" if n_ex else "The clearest cases"
+        those = f"Those {_count(n_ex)}" if n_ex else "Those few"
         base += " " + _words(f"""
-            The clearest cases are farming and building trades in places such as
+            {head} are farming and building trades in places such as
             {las}: among the highest in the country for occupational risk and among
-            the lowest for poverty. They sit around {_ordinal(ov['median_rank'])} of
-            {ov['n_areas']:,} here, and the best-placed of them is
-            {_ordinal(ov['best_rank'])}. That follows from the weights we chose, not
-            from anything in the data.""")
+            the lowest for poverty. {those} sit around {_ordinal(ov['median_rank'])}
+            of {ov['n_areas']:,} here, and the best-placed of them is
+            {_ordinal(ov['best_rank'])} — where those particular areas land, rather
+            than a measured claim about every place like them. That follows from the
+            weights we chose, not from anything in the data.""")
 
     flag = _diagnostic_path(cfg, "blind_spot")
     if flag is None or not flag.exists():
